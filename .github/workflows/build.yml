@@ -1,1 +1,133 @@
+name: Build Shadowfall (APK + IPA)
 
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths-ignore: ['**.md']
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project (game.zip or plain files)
+        run: |
+          mkdir -p _game
+          if [ -f game.zip ]; then
+            unzip -q -o game.zip -d _game
+          else
+            rsync -a --exclude=_game --exclude=.git ./ _game/
+          fi
+          if [ ! -f _game/project.godot ]; then
+            sub=$(dirname "$(find _game -maxdepth 3 -name project.godot | head -1)")
+            mv "$sub" _game2 && rm -rf _game && mv _game2 _game
+          fi
+          ls -la _game
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Godot and export templates
+        run: |
+          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          wget -q $B/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          wget -q $B/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          unzip -q Godot_v${GODOT_VERSION}-stable_export_templates.tpz -d tpl
+          mv tpl/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/
+
+      - name: Android SDK + debug keystore + editor settings
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "build-tools;34.0.0" "platforms;android-34" "cmdline-tools;latest"
+          keytool -genkeypair -v -keystore $HOME/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.3.tres <<EOS
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOS
+          sed -i 's/^ *//' ~/.config/godot/editor_settings-4.3.tres
+
+      - name: Export APK
+        working-directory: _game
+        run: |
+          mkdir -p build
+          godot --headless --path . --import || true
+          godot --headless --path . --export-debug "Android" build/Shadowfall.apk
+          ls -la build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shadowfall-APK
+          path: _game/build/Shadowfall.apk
+
+  ios:
+    name: iOS IPA (unsigned)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project (game.zip or plain files)
+        run: |
+          mkdir -p _game
+          if [ -f game.zip ]; then
+            unzip -q -o game.zip -d _game
+          else
+            rsync -a --exclude=_game --exclude=.git ./ _game/
+          fi
+          if [ ! -f _game/project.godot ]; then
+            sub=$(dirname "$(find _game -maxdepth 3 -name project.godot | head -1)")
+            mv "$sub" _game2 && rm -rf _game && mv _game2 _game
+          fi
+
+      - name: Install Godot and export templates
+        run: |
+          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sL -o godot.zip $B/Godot_v${GODOT_VERSION}-stable_macos.universal.zip
+          curl -sL -o tpl.tpz $B/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          unzip -q godot.zip
+          mkdir -p "$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable"
+          unzip -q tpl.tpz -d tpl
+          mv tpl/templates/* "$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Export Xcode project
+        working-directory: _game
+        run: |
+          GODOT="$GITHUB_WORKSPACE/Godot.app/Contents/MacOS/Godot"
+          mkdir -p build/ios
+          "$GODOT" --headless --path . --import || true
+          "$GODOT" --headless --path . --export-release "iOS" build/ios/Shadowfall.ipa
+          ls -la build/ios
+
+      - name: Build unsigned IPA
+        working-directory: _game/build/ios
+        run: |
+          xcodebuild -list -project Shadowfall.xcodeproj
+          xcodebuild -project Shadowfall.xcodeproj -scheme Shadowfall -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/Shadowfall.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" archive
+          mkdir -p Payload
+          cp -R Shadowfall.xcarchive/Products/Applications/*.app Payload/
+          zip -qry ../Shadowfall-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shadowfall-IPA
+          path: _game/build/Shadowfall-unsigned.ipa
