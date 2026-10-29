@@ -25,6 +25,13 @@ func _ready() -> void:
 	ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui_layer.add_child(ui_root)
+	if "autoplay" in OS.get_cmdline_user_args():
+		Game.autoplay = true
+		Game.sound_on = false
+		Game.owned = ["fists", "sword"]
+		Game.equipped = "sword"
+		start_battle(1)
+		return
 	show_menu()
 
 
@@ -100,6 +107,14 @@ func _process(delta: float) -> void:
 				tgt.hurt())
 
 
+func _menu_fighters(show_: bool) -> void:
+	if menu_root == null:
+		return
+	for ch in menu_root.get_children():
+		if ch is Stickman:
+			ch.visible = show_
+
+
 func _coin_pill() -> PanelContainer:
 	var p := UIKit.panel(UIKit.PANEL, Color(1, 0.8, 0.3, 0.5))
 	var hb := HBoxContainer.new()
@@ -170,6 +185,7 @@ func show_menu() -> void:
 
 # ------------------------------------------------------------ levels
 func show_levels() -> void:
+	_menu_fighters(false)
 	var s := _new_screen()
 	_top_bar(s, Game.t("levels"), show_menu)
 	var cc := CenterContainer.new()
@@ -200,6 +216,7 @@ func show_levels() -> void:
 
 # ------------------------------------------------------------ shop
 func show_shop() -> void:
+	_menu_fighters(false)
 	var s := _new_screen()
 	_top_bar(s, Game.t("shop"), show_menu)
 	var tabs := HBoxContainer.new()
@@ -356,6 +373,7 @@ func _shop_upgrades(s: Control) -> void:
 
 # ------------------------------------------------------------ settings
 func show_settings() -> void:
+	_menu_fighters(false)
 	reset_armed = false
 	var s := _new_screen()
 	_top_bar(s, Game.t("settings"), show_menu)

@@ -16,6 +16,7 @@ var equipped := "fists"
 var upgrades := {"vit": 0, "pow": 0, "agi": 0}
 var stars := {}
 var current_level := 1
+var autoplay := false
 var font: Font
 var ui_theme: Theme
 
@@ -60,6 +61,7 @@ const TR := {
 	"kills": ["Kills", "القتلى"], "reward": ["Coins", "العملات"],
 	"wave_clear": ["WAVE CLEARED", "تم صد الموجة"],
 	"tagline": ["Rise from the shadows", "انهض من بين الظلال"],
+	"hits": ["HITS", "ضربة"], "finish": ["FINISH!", "القاضية!"],
 	"reset": ["Reset progress", "مسح التقدم"], "reset_ok": ["Tap again to confirm", "اضغط مرة أخرى للتأكيد"],
 }
 
@@ -228,6 +230,7 @@ func _setup_sound() -> void:
 	_streams["die"] = _make_wav(0.30, "die")
 	_streams["coin"] = _make_wav(0.18, "coin")
 	_streams["ui"] = _make_wav(0.07, "ui")
+	_streams["boom"] = _make_wav(0.5, "boom")
 	for i in 6:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -256,6 +259,8 @@ func _make_wav(dur: float, kind: String) -> AudioStreamWAV:
 				s = sin(float(i) * 0.03 * (1.0 - tt * 0.7)) * env * 0.8 + (rng.randf() * 2.0 - 1.0) * env * 0.25
 			"coin":
 				s = (sin(float(i) * 0.30) * 0.5 + sin(float(i) * 0.45) * 0.3) * env
+			"boom":
+				s = sin(float(i) * 0.012 * (1.0 - tt * 0.8)) * env + (rng.randf() * 2.0 - 1.0) * env * 0.35
 			"ui":
 				s = sin(float(i) * 0.25) * env * 0.5
 		data.encode_s16(i * 2, int(clampf(s, -1.0, 1.0) * 30000.0))

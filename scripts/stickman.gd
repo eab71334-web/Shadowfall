@@ -59,6 +59,7 @@ var spd := 100.0
 var reach := 56.0
 var is_player := false
 var show_bar := 0.0
+var flip := false
 
 var _kc := {}
 
@@ -305,6 +306,8 @@ func _draw() -> void:
 		pose_ = _mix(flail, lie, _ease("io", (dead_t - 0.25) / 0.35))
 		lie_k = _ease("o", dead_t / 0.36)
 		rot = -float(facing) * lie_k * PI * 0.5 + sin(seed_) * 0.08 * lie_k
+		if flip:
+			rot -= float(facing) * TAU * _ease("o", dead_t / 0.7)
 	else:
 		var base := _base_pose()
 		var ap0 := attack_progress()

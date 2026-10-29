@@ -19,11 +19,15 @@ func ring(pos: Vector2, size := 60.0) -> void:
 	items.append({"k": "ring", "p": pos, "t": 0.0, "d": 0.3, "s": size})
 
 
-func sparks(pos: Vector2, dir: int, n := 8) -> void:
+func sparks(pos: Vector2, dir: int, n := 8, power := 1.0) -> void:
 	for i in n:
 		var a := randf_range(-0.9, 0.9) + (0.0 if dir > 0 else PI)
-		var sp := 200.0 + randf() * 380.0
+		var sp := (200.0 + randf() * 380.0) * power
 		items.append({"k": "spark", "p": pos, "v": Vector2.from_angle(a) * sp, "t": 0.0, "d": 0.25 + randf() * 0.2})
+
+
+func slash(pos: Vector2, dir: int, size := 110.0) -> void:
+	items.append({"k": "slash", "p": pos, "t": 0.0, "d": 0.26, "s": size, "dir": dir})
 
 
 func dust(pos: Vector2, n := 4) -> void:
@@ -65,6 +69,18 @@ func _draw() -> void:
 					var r := sz * (1.0 - float(j) / 6.0) * (0.6 + 0.4 * (1.0 - k))
 					draw_circle(p, r, Color(1.0, 0.95, 0.85, 0.10 * (1.0 - k)))
 				draw_circle(p, sz * 0.22 * (1.0 - k), Color(1, 1, 1, 0.9 * (1.0 - k)))
+			"slash":
+				var sz2: float = it["s"]
+				var dr: int = it["dir"]
+				var cc := p + Vector2(-float(dr) * sz2 * 0.55, sz2 * 0.15)
+				var a0 := -1.15
+				var a1 := 0.55
+				if dr < 0:
+					var t0 := PI - a1
+					a1 = PI - a0
+					a0 = t0
+				for j in 4:
+					draw_arc(cc, sz2 - float(j) * 6.0, a0, a1, 28, Color(1, 1, 1, (0.9 - float(j) * 0.2) * (1.0 - k)), maxf(1.0, (9.0 - float(j) * 2.0) * (1.0 - k * 0.6)), true)
 			"dust":
 				draw_circle(p, float(it["r"]) * (0.7 + k), Color(1, 0.92, 0.85, 0.20 * (1.0 - k)))
 			"ring":

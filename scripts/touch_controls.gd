@@ -5,6 +5,8 @@ class_name TouchControls
 var held := {"left": false, "right": false, "jump": false, "attack": false, "dash": false}
 var pressed_at := {"jump": -1000, "attack": -1000, "dash": -1000}
 var touches := {}
+var bot := false
+var bot_axis := 0.0
 var rects := {}
 
 
@@ -81,6 +83,8 @@ func _input(event: InputEvent) -> void:
 
 
 func axis() -> float:
+	if bot:
+		return bot_axis
 	var a := 0.0
 	if held["left"] or Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
 		a -= 1.0
@@ -90,6 +94,8 @@ func axis() -> float:
 
 
 func is_held(n: String) -> bool:
+	if bot:
+		return n == "attack"
 	if n == "attack":
 		return held["attack"] or Input.is_physical_key_pressed(KEY_J) or Input.is_physical_key_pressed(KEY_Z)
 	if n == "jump":
@@ -98,6 +104,12 @@ func is_held(n: String) -> bool:
 
 
 func consume(n: String) -> bool:
+	if bot:
+		if n == "jump":
+			return randf() < 0.012
+		if n == "dash":
+			return randf() < 0.004
+		return false
 	if Time.get_ticks_msec() - int(pressed_at[n]) < 180:
 		pressed_at[n] = -1000
 		return true

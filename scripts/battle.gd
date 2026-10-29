@@ -66,6 +66,26 @@ var queued_t := 0.0
 var coyote := 0.0
 var jump_cut := false
 var run_dust_t := 0.0
+var cam: Camera2D
+var zoom_cur := 1.0
+var zoom_tgt := 1.0
+var zoom_hold_until := 0
+var focus := Vector2.ZERO
+var sm_until := 0
+var sm_scale := 1.0
+var hs_until := 0
+var flash_rect: ColorRect
+var flash_a := 0.0
+var flash_col := Color.WHITE
+var bar_top: ColorRect
+var bar_bot: ColorRect
+var lb_cur := 0.0
+var lb_target := 0.0
+var lb_until := 0
+var combo_count := 0
+var combo_timer := 0.0
+var combo_label: Label
+var is_finisher := false
 
 
 func _ready() -> void:
@@ -84,8 +104,17 @@ func _ready() -> void:
 	fx = Effects.new()
 	fx.z_index = 10
 	add_child(fx)
+	cam = Camera2D.new()
+	cam.position = Vector2(W * 0.5, H * 0.5)
+	add_child(cam)
+	cam.make_current()
+	focus = cam.position
 	waves = Game.build_waves(level_n)
 	_build_hud()
+	if Game.autoplay:
+		controls.bot = true
+		player.max_hp = 99999.0
+		player.hp = 99999.0
 	var sub := ""
 	if level_n == 1:
 		sub = "تواضعنا لهم فظنو انهم اقوياء :"
@@ -146,6 +175,29 @@ func _build_hud() -> void:
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.draw.connect(_draw_bar)
 	hud_root.add_child(bar)
+	flash_rect = ColorRect.new()
+	flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash_rect.color = Color(1, 1, 1, 0)
+	hud_root.add_child(flash_rect)
+	bar_top = ColorRect.new()
+	bar_top.color = Color.BLACK
+	bar_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_top.size = Vector2(W, 0)
+	hud_root.add_child(bar_top)
+	bar_bot = ColorRect.new()
+	bar_bot.color = Color.BLACK
+	bar_bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_bot.position = Vector2(0, H)
+	bar_bot.size = Vector2(W, 0)
+	hud_root.add_child(bar_bot)
+	combo_label = UIKit.label("", 46, UIKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT)
+	combo_label.position = Vector2(34, 92)
+	combo_label.size = Vector2(300, 60)
+	combo_label.pivot_offset = Vector2(20, 30)
+	combo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	combo_label.visible = false
+	hud_root.add_child(combo_label)
 	controls = TouchControls.new()
 	hud_root.add_child(controls)
 	banner = UIKit.label("", 54)
@@ -204,10 +256,18 @@ func _banner(title: String, sub := "", hold := 1.4) -> void:
 
 # ------------------------------------------------------------------ loop
 func _process(delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	var target := 1.0
+	if now < sm_until:
+		target = sm_scale
+	if now < hs_until:
+		target = minf(target, 0.05)
+	if target > Engine.time_scale:
+		Engine.time_scale = minf(target, Engine.time_scale + 0.25)
+	else:
+		Engine.time_scale = target
+	var real_dt := delta / maxf(Engine.time_scale, 0.05)
 	var dt := delta
-	if hitstop > 0.0:
-		hitstop -= delta
-		dt = delta * 0.08
 	match state:
 		"intro":
 			intro_t -= delta
@@ -220,23 +280,88 @@ func _process(delta: float) -> void:
 			if clear_t <= 0.0:
 				_next_wave()
 		"won":
-			end_t -= delta
+			end_t -= real_dt
 			if end_t <= 0.0:
 				_end(true)
 		"lost":
-			end_t -= delta
+			end_t -= real_dt
 			if end_t <= 0.0:
 				_end(false)
 	_update_player(dt)
 	_update_enemies(dt)
 	_update_corpses(dt)
-	if shake > 0.0:
-		shake = maxf(0.0, shake - 30.0 * delta)
-		position = Vector2(randf_range(-shake, shake), randf_range(-shake, shake))
-	else:
-		position = Vector2.ZERO
+	_update_camera(real_dt, now)
 	dash_cd = maxf(0.0, dash_cd - dt)
 	bar.queue_redraw()
+
+
+func _update_camera(rdt: float, now: int) -> void:
+	if now >= zoom_hold_until:
+		zoom_tgt = lerpf(zoom_tgt, 1.0, 1.0 - exp(-5.0 * rdt))
+	zoom_cur = lerpf(zoom_cur, zoom_tgt, 1.0 - exp(-16.0 * rdt))
+	var z := maxf(zoom_cur, 1.0)
+	cam.zoom = Vector2(z, z)
+	var f := Vector2(W * 0.5, H * 0.5).lerp(focus, clampf((z - 1.0) * 3.0, 0.0, 1.0))
+	var hw := W * 0.5 / z
+	var hh := H * 0.5 / z
+	f.x = clampf(f.x, hw, W - hw)
+	f.y = clampf(f.y, hh, H - hh)
+	cam.position = f
+	shake = maxf(0.0, shake - 40.0 * rdt)
+	cam.offset = Vector2(randf_range(-shake, shake), randf_range(-shake, shake))
+	flash_a = maxf(0.0, flash_a - 4.0 * rdt)
+	flash_rect.color = Color(flash_col.r, flash_col.g, flash_col.b, flash_a)
+	if now >= lb_until:
+		lb_target = 0.0
+	lb_cur = lerpf(lb_cur, lb_target, 1.0 - exp(-10.0 * rdt))
+	bar_top.size = Vector2(W, lb_cur)
+	bar_bot.position = Vector2(0, H - lb_cur)
+	bar_bot.size = Vector2(W, lb_cur)
+	combo_timer -= rdt
+	if combo_timer <= 0.0 and combo_count > 0:
+		combo_count = 0
+		combo_label.visible = false
+	combo_label.scale = combo_label.scale.lerp(Vector2.ONE, 1.0 - exp(-12.0 * rdt))
+
+
+func _hitstop(secs: float) -> void:
+	hs_until = maxi(hs_until, Time.get_ticks_msec() + int(secs * 1000.0))
+
+
+func _punch(amount: float, pos: Vector2) -> void:
+	zoom_cur = maxf(zoom_cur, amount)
+	focus = pos
+
+
+func _flash(c: Color, a: float) -> void:
+	flash_col = c
+	flash_a = maxf(flash_a, a)
+
+
+func _cinematic(scale_: float, secs: float, zoom: float, pos: Vector2, flash_amt: float) -> void:
+	var now := Time.get_ticks_msec()
+	sm_scale = scale_
+	sm_until = now + int(secs * 1000.0)
+	zoom_tgt = zoom
+	zoom_hold_until = sm_until
+	focus = pos
+	lb_target = 62.0
+	lb_until = sm_until + 200
+	_flash(Color.WHITE, flash_amt)
+	Game.sfx("boom", 1.0)
+	Game.vibrate(70)
+
+
+func _register_hit() -> void:
+	combo_count += 1
+	combo_timer = 2.2
+	combo_label.visible = true
+	combo_label.text = "%d  %s" % [combo_count, Game.t("hits")]
+	combo_label.scale = Vector2(1.35, 1.35)
+
+
+func _exit_tree() -> void:
+	Engine.time_scale = 1.0
 
 
 func _next_wave() -> void:
@@ -255,8 +380,7 @@ func _update_fight(dt: float) -> void:
 	elif queue.is_empty() and enemies.is_empty() and not player.dead:
 		if wave_idx >= waves.size():
 			state = "won"
-			end_t = 1.8
-			hitstop = 0.3
+			end_t = 2.2
 			_banner(Game.t("victory"), "", 1.4)
 		else:
 			state = "clear"
@@ -269,6 +393,13 @@ func _update_player(dt: float) -> void:
 	var p := player
 	if p.dead:
 		return
+	if controls.bot:
+		var tn = _nearest_enemy(p.position.x, 4000.0)
+		if tn == null:
+			controls.bot_axis = 0.0
+		else:
+			var dd: float = tn.position.x - p.position.x
+			controls.bot_axis = 0.0 if absf(dd) < 80.0 else signf(dd)
 	var st: Dictionary = Game.stats()
 	var axis := controls.axis()
 	p.position.x += p.kbv * dt
@@ -384,6 +515,7 @@ func _player_attack_start() -> void:
 			combo = 0
 		atk = seq[combo % seq.size()]
 		combo += 1
+	is_finisher = atk == "thrust" and combo > 0 and combo % 4 == 0 and p.on_ground and p.dash_t <= 0.0
 	var axis := controls.axis()
 	var ne = _nearest_enemy(p.position.x, 230.0)
 	if axis != 0.0:
@@ -412,7 +544,10 @@ func _player_strike() -> void:
 	if a.has("abs"):
 		rng = float(a["abs"])
 	var kb := float(w["kb"]) * float(a["kb"])
+	if is_finisher:
+		kb *= 1.7
 	var ymax := 130.0 if p.atk_type == "air" else 90.0
+	var any_hit := false
 	for e in enemies.duplicate():
 		var dx: float = (e.position.x - p.position.x) * float(p.facing)
 		if dx > -16.0 and dx < rng + 16.0 * e.s and absf(e.position.y - p.position.y) < ymax:
@@ -420,7 +555,15 @@ func _player_strike() -> void:
 			var crit := randf() < 0.12
 			if crit:
 				d *= 1.7
+			if is_finisher:
+				d *= 1.4
+				crit = true
 			_damage_enemy(e, d, p.facing, kb, crit)
+			any_hit = true
+	if any_hit and is_finisher:
+		_cinematic(0.28, 0.5, 1.28, p.position + Vector2(float(p.facing) * 50.0, -60.0), 0.55)
+		fx.text(p.position + Vector2(0, -150), Game.t("finish"), UIKit.GOLD, 46)
+		is_finisher = false
 
 
 func _damage_enemy(e, amount: float, dir: int, kb: float, crit: bool) -> void:
@@ -435,19 +578,30 @@ func _damage_enemy(e, amount: float, dir: int, kb: float, crit: bool) -> void:
 	var hp_: Vector2 = e.position + Vector2(float(dir) * 14.0, -55.0 * e.s)
 	fx.flash(hp_, 56.0 if crit else 38.0)
 	fx.sparks(hp_, dir, 10 if crit else 6)
+	var heavy := kb >= 250.0 or crit
+	if heavy:
+		fx.slash(hp_, dir, 120.0 if crit else 100.0)
+		fx.sparks(hp_, dir, 16, 1.8)
+		fx.ring(hp_, 90.0)
+	_register_hit()
+	_punch(1.04 + minf(kb * 0.0002, 0.07), hp_)
 	fx.text(e.position + Vector2(0, -115.0 * e.s), str(int(amount)), UIKit.GOLD if crit else Color.WHITE, 34 if crit else 26)
 	shake = maxf(shake, 3.0 + kb * 0.012)
-	hitstop = clampf(0.04 + kb * 0.0004, 0.04, 0.13)
+	_hitstop(clampf(0.05 + kb * 0.0004, 0.05, 0.16))
 	Game.sfx("hit", randf_range(0.9, 1.15))
 	Game.vibrate(15)
 	if e.hp <= 0.0:
-		_kill_enemy(e, dir)
+		_kill_enemy(e, dir, heavy)
 
 
-func _kill_enemy(e, dir: int) -> void:
+func _kill_enemy(e, dir: int, heavy := false) -> void:
 	enemies.erase(e)
 	e.die()
 	e.kbv = float(dir) * 420.0
+	if heavy:
+		e.flip = true
+		e.pop_vy = -520.0
+		e.kbv = float(dir) * 480.0
 	e.z_index = -1
 	corpses.append(e)
 	if corpses.size() > 36:
@@ -459,9 +613,12 @@ func _kill_enemy(e, dir: int) -> void:
 	fx.text(e.position + Vector2(0, -75), "+%d" % c, UIKit.GOLD, 26)
 	fx.flash(e.position + Vector2(0, -45.0 * e.s), 70.0, 0.3)
 	Game.sfx("die", randf_range(0.9, 1.1))
-	if e.kind == "boss":
-		hitstop = 0.4
+	var last_of_level := enemies.is_empty() and queue.is_empty() and wave_idx >= waves.size()
+	if e.kind == "boss" or last_of_level:
+		_cinematic(0.18, 1.1, 1.45, e.position + Vector2(0, -50), 0.6)
 		shake = 10.0
+	elif enemies.is_empty() and queue.is_empty():
+		_cinematic(0.45, 0.4, 1.16, e.position + Vector2(0, -50), 0.25)
 
 
 func _update_enemies(dt: float) -> void:
@@ -482,7 +639,7 @@ func _update_enemies(dt: float) -> void:
 			var a: Dictionary = e.cur_atk
 			var apn: float = e.attack_progress()
 			if e.lunge_total != 0.0 and apn >= float(a["ms"]) and apn <= float(a["me"]):
-				var win := (float(a["me"]) - float(a["ms"])) * e.atk_dur
+				var win: float = (float(a["me"]) - float(a["ms"])) * float(e.atk_dur)
 				e.position.x += float(e.facing) * e.lunge_total * dt / win
 			if not e.hit_done and apn >= float(a["hit"]):
 				e.hit_done = true
@@ -538,6 +695,8 @@ func _damage_player(amount: float, dir: int) -> void:
 	fx.sparks(p.position + Vector2(0, -55), dir, 5)
 	fx.text(p.position + Vector2(0, -120), str(int(amount)), Color(1, 0.4, 0.4), 26)
 	shake = maxf(shake, 6.0)
+	_flash(Color(1, 0.15, 0.15), 0.28)
+	_hitstop(0.07)
 	Game.sfx("hit", 0.7)
 	Game.vibrate(40)
 	if p.hp <= 0.0:
@@ -545,8 +704,8 @@ func _damage_player(amount: float, dir: int) -> void:
 		p.die()
 		p.kbv = float(dir) * 300.0
 		state = "lost"
-		end_t = 1.8
-		hitstop = 0.25
+		end_t = 2.0
+		_cinematic(0.25, 1.0, 1.3, p.position + Vector2(0, -50), 0.3)
 		_banner(Game.t("defeat"), "", 1.5)
 
 
