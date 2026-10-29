@@ -131,3 +131,51 @@ jobs:
         with:
           name: Shadowfall-IPA
           path: _game/build/Shadowfall-unsigned.ipa
+
+  preview:
+    name: Linux preview video (auto-play test)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project (game.zip or plain files)
+        run: |
+          mkdir -p _game
+          if [ -f game.zip ]; then
+            unzip -q -o game.zip -d _game
+          else
+            rsync -a --exclude=_game --exclude=.git ./ _game/
+          fi
+          if [ ! -f _game/project.godot ]; then
+            sub=$(dirname "$(find _game -maxdepth 3 -name project.godot | head -1)")
+            mv "$sub" _game2 && rm -rf _game && mv _game2 _game
+          fi
+
+      - name: Install tools and Godot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb ffmpeg libgl1-mesa-dri libglx-mesa0 libxcursor1 libxinerama1 libxi6 libxrandr2 libasound2 libpulse0 > /dev/null
+          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          wget -q $B/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+
+      - name: Record auto-play gameplay
+        working-directory: _game
+        run: |
+          godot --headless --path . --import > ../import_log.txt 2>&1 || true
+          xvfb-run -a -s "-screen 0 1280x600x24" godot --path . --rendering-driver opengl3 --write-movie ../preview.avi --fixed-fps 30 --quit-after 1500 -- --autoplay > ../run_log.txt 2>&1 || true
+          ffmpeg -y -loglevel error -i ../preview.avi -c:v libx264 -pix_fmt yuv420p ../preview.mp4 || true
+
+      - name: Show script errors
+        if: always()
+        run: grep -n -i "error" import_log.txt run_log.txt | head -40 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shadowfall-preview
+          path: |
+            preview.mp4
+            import_log.txt
+            run_log.txt
