@@ -3,11 +3,29 @@ class_name Battle
 
 signal exit(action: String, data: Dictionary)
 
+const SEQ := {
+	"slash": ["slash_down", "slash_back", "kick", "thrust"],
+	"stab": ["thrust", "thrust", "kick", "thrust"],
+	"punch": ["thrust", "thrust", "kick", "thrust"],
+}
+const E_ATK := {
+	"grunt": ["slash_down", "thrust"],
+	"runner": ["kick", "thrust"],
+	"brute": ["slash_down", "slash_down"],
+	"boss": ["slash_down", "slash_back", "thrust", "kick"],
+}
+const E_DUR := {"grunt": 1.45, "runner": 1.0, "brute": 1.7, "boss": 1.15}
+const RUN_SPEED := 330.0
+const ACCEL := 3400.0
+const DECEL := 4200.0
+const GRAVITY := 2300.0
+const JUMP_V := -780.0
+
 const ENEMY := {
-	"grunt": {"hp": 38.0, "dmg": 7.0, "spd": 105.0, "reach": 54.0, "cd": 1.5, "s": 1.0, "weapon": "dagger", "coins": 4},
-	"runner": {"hp": 24.0, "dmg": 5.0, "spd": 195.0, "reach": 46.0, "cd": 1.0, "s": 0.92, "weapon": "fists", "coins": 5},
-	"brute": {"hp": 140.0, "dmg": 16.0, "spd": 68.0, "reach": 74.0, "cd": 2.1, "s": 1.28, "weapon": "hammer", "coins": 14},
-	"boss": {"hp": 650.0, "dmg": 22.0, "spd": 92.0, "reach": 96.0, "cd": 1.5, "s": 1.5, "weapon": "katana", "coins": 80},
+	"grunt": {"hp": 38.0, "dmg": 7.0, "spd": 125.0, "reach": 54.0, "cd": 1.5, "s": 1.0, "weapon": "dagger", "coins": 4},
+	"runner": {"hp": 24.0, "dmg": 5.0, "spd": 230.0, "reach": 46.0, "cd": 1.0, "s": 0.92, "weapon": "fists", "coins": 5},
+	"brute": {"hp": 140.0, "dmg": 16.0, "spd": 80.0, "reach": 74.0, "cd": 2.1, "s": 1.28, "weapon": "hammer", "coins": 14},
+	"boss": {"hp": 650.0, "dmg": 22.0, "spd": 125.0, "reach": 96.0, "cd": 1.5, "s": 1.5, "weapon": "katana", "coins": 80},
 }
 
 var level_n := 1
@@ -42,6 +60,12 @@ var shake := 0.0
 var hitstop := 0.0
 var ended := false
 var banner_tween: Tween
+var combo := 0
+var combo_t := 0.0
+var queued_t := 0.0
+var coyote := 0.0
+var jump_cut := false
+var run_dust_t := 0.0
 
 
 func _ready() -> void:
@@ -248,42 +272,92 @@ func _update_player(dt: float) -> void:
 	var st: Dictionary = Game.stats()
 	var axis := controls.axis()
 	p.position.x += p.kbv * dt
-	p.kbv = move_toward(p.kbv, 0.0, 1500.0 * dt)
+	p.kbv = move_toward(p.kbv, 0.0, 1800.0 * dt)
 	if p.dash_t > 0.0:
 		p.dash_t -= dt
-		p.position.x += float(p.facing) * 720.0 * dt
-		p.vx = float(p.facing) * 720.0
+		p.position.x += float(p.facing) * 760.0 * dt
+		p.vx = float(p.facing) * 760.0
 	else:
-		var target := axis * 235.0 * float(st["spd"])
+		var target := axis * RUN_SPEED * float(st["spd"])
 		if p.is_attacking():
-			target *= 0.35
-		p.vx = move_toward(p.vx, target, 2400.0 * dt)
+			target *= 0.15
+		elif p.hurt_t > 0.0:
+			target *= 0.5
+		var rate := DECEL
+		if absf(target) > absf(p.vx) or signf(target) != signf(p.vx):
+			rate = ACCEL
+		p.vx = move_toward(p.vx, target, rate * dt)
 		p.position.x += p.vx * dt
-		if axis != 0.0 and not p.is_attacking():
+		if axis != 0.0 and not p.is_attacking() and p.hurt_t <= 0.0:
 			p.facing = 1 if axis > 0.0 else -1
-	p.position.x = clampf(p.position.x, 28.0, W - 28.0)
-	if controls.consume("jump") and p.on_ground:
-		p.vy = -640.0
+	# jump (coyote time + buffered input + variable height)
+	if p.on_ground:
+		coyote = 0.09
+	else:
+		coyote -= dt
+	var ap := p.attack_progress()
+	if controls.consume("jump") and coyote > 0.0 and (ap < 0.0 or ap > 0.6):
+		p.atk_t = -1.0
+		p.vy = JUMP_V
 		p.on_ground = false
+		coyote = 0.0
+		jump_cut = false
+		fx.dust(p.position, 6)
 		Game.sfx("swing", 1.5)
 	if not p.on_ground:
-		p.vy += 1900.0 * dt
+		p.vy += GRAVITY * dt
+		if p.vy < -200.0 and not jump_cut and not controls.is_held("jump"):
+			p.vy *= 0.45
+			jump_cut = true
 		p.position.y += p.vy * dt
 		if p.position.y >= ground_y:
 			p.position.y = ground_y
+			if p.vy > 300.0:
+				p.land_t = 0.14
+				fx.dust(p.position, 8)
+				shake = maxf(shake, 2.0)
 			p.vy = 0.0
 			p.on_ground = true
-	if controls.consume("dash") and dash_cd <= 0.0 and p.dash_t <= 0.0:
-		p.dash_t = 0.18
-		dash_cd = 0.9
+	# dash
+	ap = p.attack_progress()
+	if controls.consume("dash") and dash_cd <= 0.0 and p.dash_t <= 0.0 and (ap < 0.0 or ap > 0.5):
+		p.atk_t = -1.0
+		p.dash_t = 0.2
+		dash_cd = 0.8
 		if axis != 0.0:
 			p.facing = 1 if axis > 0.0 else -1
 		fx.ring(p.position + Vector2(0, -40), 70.0)
-	if (controls.is_held("attack") or controls.consume("attack")) and not p.is_attacking() and p.dash_t <= 0.0:
-		_player_attack()
-	if p.is_attacking() and not p.hit_done and p.attack_progress() >= 0.38:
-		p.hit_done = true
-		_player_strike()
+		fx.dust(p.position, 6)
+	# attack + combo chaining
+	var want := controls.is_held("attack") or controls.consume("attack")
+	if want:
+		if not p.is_attacking():
+			_player_attack_start()
+		else:
+			queued_t = 0.25
+	queued_t -= dt
+	if p.is_attacking():
+		combo_t = 0.5
+		if queued_t > 0.0 and p.attack_progress() >= 0.6:
+			_player_attack_start()
+	else:
+		combo_t -= dt
+	if p.is_attacking():
+		var a: Dictionary = p.cur_atk
+		var apn := p.attack_progress()
+		if p.lunge_total != 0.0 and apn >= float(a["ms"]) and apn <= float(a["me"]):
+			var win := (float(a["me"]) - float(a["ms"])) * p.atk_dur
+			p.position.x += float(p.facing) * p.lunge_total * dt / win
+		if not p.hit_done and apn >= float(a["hit"]):
+			p.hit_done = true
+			_player_strike()
+	# running dust
+	if p.on_ground and absf(p.vx) > 200.0:
+		run_dust_t -= dt
+		if run_dust_t <= 0.0:
+			fx.dust(p.position + Vector2(float(-p.facing) * 12.0, 0), 1)
+			run_dust_t = 0.11
+	p.position.x = clampf(p.position.x, 28.0, W - 28.0)
 
 
 func _nearest_enemy(x: float, max_d: float):
@@ -297,46 +371,73 @@ func _nearest_enemy(x: float, max_d: float):
 	return best
 
 
-func _player_attack() -> void:
+func _player_attack_start() -> void:
 	var p := player
-	var w: Dictionary = p.weapon
-	var ne = _nearest_enemy(p.position.x, 190.0)
-	if ne != null:
+	var seq: Array = SEQ[p.style()]
+	var atk := ""
+	if not p.on_ground:
+		atk = "air"
+	elif p.dash_t > 0.0:
+		atk = "thrust"
+	else:
+		if combo_t <= 0.0:
+			combo = 0
+		atk = seq[combo % seq.size()]
+		combo += 1
+	var axis := controls.axis()
+	var ne = _nearest_enemy(p.position.x, 230.0)
+	if axis != 0.0:
+		p.facing = 1 if axis > 0.0 else -1
+	elif ne != null:
 		p.facing = 1 if ne.position.x > p.position.x else -1
-	p.play_attack(float(w["cd"]) + 0.1)
-	p.vx *= 0.3
-	p.position.x += float(p.facing) * 6.0
-	Game.sfx("swing", randf_range(0.9, 1.1))
+	var a: Dictionary = Stickman.ATK[atk]
+	var w: Dictionary = p.weapon
+	var sp := clampf(float(w["cd"]) / 0.36, 0.7, 1.7)
+	p.play_attack(atk, float(a["dur"]) * sp)
+	var lunge := float(a["lunge"])
+	if ne != null and (ne.position.x - p.position.x) * float(p.facing) > 0.0:
+		var gap: float = absf(ne.position.x - p.position.x) - float(w["range"]) * 0.7
+		lunge = clampf(gap, 18.0, lunge * 1.5)
+	p.lunge_total = lunge
+	queued_t = 0.0
+	Game.sfx("swing", randf_range(0.9, 1.15))
 
 
 func _player_strike() -> void:
 	var p := player
+	var a: Dictionary = p.cur_atk
 	var w: Dictionary = p.weapon
 	var st: Dictionary = Game.stats()
-	var rng := float(w["range"])
+	var rng := float(w["range"]) + float(a["reach"])
+	if a.has("abs"):
+		rng = float(a["abs"])
+	var kb := float(w["kb"]) * float(a["kb"])
+	var ymax := 130.0 if p.atk_type == "air" else 90.0
 	for e in enemies.duplicate():
 		var dx: float = (e.position.x - p.position.x) * float(p.facing)
-		if dx > -14.0 and dx < rng + 14.0 * e.s and absf(e.position.y - p.position.y) < 80.0:
-			var d := float(w["dmg"]) * float(st["dmg"]) * randf_range(0.9, 1.1)
+		if dx > -16.0 and dx < rng + 16.0 * e.s and absf(e.position.y - p.position.y) < ymax:
+			var d := float(w["dmg"]) * float(st["dmg"]) * float(a["dmg"]) * randf_range(0.92, 1.08)
 			var crit := randf() < 0.12
 			if crit:
 				d *= 1.7
-			_damage_enemy(e, d, p.facing, float(w["kb"]), crit)
+			_damage_enemy(e, d, p.facing, kb, crit)
 
 
 func _damage_enemy(e, amount: float, dir: int, kb: float, crit: bool) -> void:
 	e.hp -= amount
 	e.hurt()
-	e.kbv = float(dir) * kb * 2.2
+	e.hurt_t = 0.25 + clampf(kb / 1200.0, 0.0, 0.4)
+	e.kbv = float(dir) * kb * 2.4
+	if kb > 300.0 or crit:
+		e.pop_vy = -240.0
 	e.show_bar = 2.0
-	e.atk_t = -1.0
-	e.atk_cd = maxf(e.atk_cd, 0.5)
-	var hp_: Vector2 = e.position + Vector2(float(dir) * 14.0, -50.0 * e.s)
-	fx.flash(hp_, 52.0 if crit else 36.0)
+	e.atk_cd = maxf(e.atk_cd, 0.6)
+	var hp_: Vector2 = e.position + Vector2(float(dir) * 14.0, -55.0 * e.s)
+	fx.flash(hp_, 56.0 if crit else 38.0)
 	fx.sparks(hp_, dir, 10 if crit else 6)
-	fx.text(e.position + Vector2(0, -105.0 * e.s), str(int(amount)), UIKit.GOLD if crit else Color.WHITE, 34 if crit else 26)
+	fx.text(e.position + Vector2(0, -115.0 * e.s), str(int(amount)), UIKit.GOLD if crit else Color.WHITE, 34 if crit else 26)
 	shake = maxf(shake, 3.0 + kb * 0.012)
-	hitstop = 0.1 if kb > 250.0 else (0.08 if crit else 0.05)
+	hitstop = clampf(0.04 + kb * 0.0004, 0.04, 0.13)
 	Game.sfx("hit", randf_range(0.9, 1.15))
 	Game.vibrate(15)
 	if e.hp <= 0.0:
@@ -346,9 +447,8 @@ func _damage_enemy(e, amount: float, dir: int, kb: float, crit: bool) -> void:
 func _kill_enemy(e, dir: int) -> void:
 	enemies.erase(e)
 	e.die()
-	e.kbv = float(dir) * 260.0
+	e.kbv = float(dir) * 420.0
 	e.z_index = -1
-	e.position.y = ground_y - randf() * 5.0
 	corpses.append(e)
 	if corpses.size() > 36:
 		var old = corpses.pop_front()
@@ -379,16 +479,25 @@ func _update_enemies(dt: float) -> void:
 			e.facing = 1 if dist > 0.0 else -1
 		if e.is_attacking():
 			e.vx = 0.0
-			if not e.hit_done and e.attack_progress() >= 0.45:
+			var a: Dictionary = e.cur_atk
+			var apn: float = e.attack_progress()
+			if e.lunge_total != 0.0 and apn >= float(a["ms"]) and apn <= float(a["me"]):
+				var win := (float(a["me"]) - float(a["ms"])) * e.atk_dur
+				e.position.x += float(e.facing) * e.lunge_total * dt / win
+			if not e.hit_done and apn >= float(a["hit"]):
 				e.hit_done = true
 				_enemy_strike(e)
-		elif absf(dist) > e.reach * 0.8:
+		elif absf(dist) > e.reach + 36.0:
 			e.vx = float(e.facing) * e.spd
 			e.position.x += e.vx * dt
 		else:
 			e.vx = 0.0
 			if e.atk_cd <= 0.0:
-				e.play_attack(0.4 if e.kind == "runner" else 0.55)
+				var arr: Array = E_ATK[e.kind]
+				var at: String = arr[randi() % arr.size()]
+				var ad: Dictionary = Stickman.ATK[at]
+				e.play_attack(at, float(ad["dur"]) * float(E_DUR[e.kind]))
+				e.lunge_total = float(ad["lunge"]) * 0.8
 				e.atk_cd = float(ENEMY[e.kind]["cd"]) * randf_range(0.9, 1.2)
 		for o in enemies:
 			if o != e and absf(o.position.x - e.position.x) < 26.0:
@@ -409,26 +518,32 @@ func _enemy_strike(e) -> void:
 	var p := player
 	if p.dead or p.dash_t > 0.0:
 		return
+	var a: Dictionary = e.cur_atk
+	var rr: float = e.reach + float(a["reach"]) * 0.5
+	if a.has("abs"):
+		rr = float(a["abs"]) * 0.8
 	var dx: float = (p.position.x - e.position.x) * float(e.facing)
-	if dx > -10.0 and dx < e.reach + 18.0 and absf(p.position.y - e.position.y) < 70.0:
-		_damage_player(e.dmg, e.facing)
+	if dx > -10.0 and dx < rr + 18.0 and absf(p.position.y - e.position.y) < 70.0:
+		_damage_player(e.dmg * float(a["dmg"]), e.facing)
 
 
 func _damage_player(amount: float, dir: int) -> void:
 	var p := player
 	p.hp -= amount
 	p.hurt()
-	p.kbv = float(dir) * 240.0
-	fx.flash(p.position + Vector2(float(-dir) * 6.0, -50), 40.0)
-	fx.sparks(p.position + Vector2(0, -50), dir, 5)
-	fx.text(p.position + Vector2(0, -105), str(int(amount)), Color(1, 0.4, 0.4), 26)
+	combo = 0
+	p.kbv = float(dir) * 300.0
+	p.pop_vy = -150.0
+	fx.flash(p.position + Vector2(float(-dir) * 6.0, -55), 44.0)
+	fx.sparks(p.position + Vector2(0, -55), dir, 5)
+	fx.text(p.position + Vector2(0, -120), str(int(amount)), Color(1, 0.4, 0.4), 26)
 	shake = maxf(shake, 6.0)
 	Game.sfx("hit", 0.7)
 	Game.vibrate(40)
 	if p.hp <= 0.0:
 		p.hp = 0.0
 		p.die()
-		p.kbv = float(dir) * 200.0
+		p.kbv = float(dir) * 300.0
 		state = "lost"
 		end_t = 1.8
 		hitstop = 0.25

@@ -26,6 +26,11 @@ func sparks(pos: Vector2, dir: int, n := 8) -> void:
 		items.append({"k": "spark", "p": pos, "v": Vector2.from_angle(a) * sp, "t": 0.0, "d": 0.25 + randf() * 0.2})
 
 
+func dust(pos: Vector2, n := 4) -> void:
+	for i in n:
+		items.append({"k": "dust", "p": pos + Vector2(randf_range(-10.0, 10.0), -2.0), "v": Vector2(randf_range(-60.0, 60.0), randf_range(-50.0, -10.0)), "t": 0.0, "d": 0.35 + randf() * 0.2, "r": 5.0 + randf() * 5.0})
+
+
 func text(pos: Vector2, str_: String, col := Color(1, 1, 1), size := 28) -> void:
 	items.append({"k": "text", "p": pos, "t": 0.0, "d": 0.8, "str": str_, "c": col, "s": size})
 
@@ -37,7 +42,7 @@ func _process(delta: float) -> void:
 	while i >= 0:
 		var it: Dictionary = items[i]
 		it["t"] = float(it["t"]) + delta
-		if it["k"] == "spark":
+		if it["k"] == "spark" or it["k"] == "dust":
 			it["p"] = it["p"] + it["v"] * delta
 			it["v"] = it["v"] * 0.92
 		elif it["k"] == "text":
@@ -60,6 +65,8 @@ func _draw() -> void:
 					var r := sz * (1.0 - float(j) / 6.0) * (0.6 + 0.4 * (1.0 - k))
 					draw_circle(p, r, Color(1.0, 0.95, 0.85, 0.10 * (1.0 - k)))
 				draw_circle(p, sz * 0.22 * (1.0 - k), Color(1, 1, 1, 0.9 * (1.0 - k)))
+			"dust":
+				draw_circle(p, float(it["r"]) * (0.7 + k), Color(1, 0.92, 0.85, 0.20 * (1.0 - k)))
 			"ring":
 				draw_arc(p, float(it["s"]) * k, 0.0, TAU, 28, Color(1, 1, 1, 0.6 * (1.0 - k)), 3.0, true)
 			"spark":

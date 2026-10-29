@@ -92,6 +92,8 @@ func axis() -> float:
 func is_held(n: String) -> bool:
 	if n == "attack":
 		return held["attack"] or Input.is_physical_key_pressed(KEY_J) or Input.is_physical_key_pressed(KEY_Z)
+	if n == "jump":
+		return held["jump"] or Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP) or Input.is_physical_key_pressed(KEY_SPACE)
 	return held.get(n, false)
 
 

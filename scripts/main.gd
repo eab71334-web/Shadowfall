@@ -68,8 +68,7 @@ func _build_menu_scene() -> void:
 		c.facing = 1 if i % 2 == 0 else -1
 		c.position = Vector2(randf_range(60.0, vw - 60.0), gy - randf() * 5.0)
 		menu_root.add_child(c)
-		c.die()
-		c.dead_t = 1.0
+		c.make_corpse()
 	duel_a = Stickman.new()
 	duel_a.weapon = Game.WEAPONS["katana"]
 	duel_a.s = 1.3
@@ -92,7 +91,9 @@ func _process(delta: float) -> void:
 		duel_t = 1.25
 		var atk := duel_a if duel_turn == 0 else duel_b
 		var tgt := duel_b if duel_turn == 0 else duel_a
-		atk.play_attack(0.5)
+		var types := ["slash_down", "thrust", "slash_back", "kick"]
+		var tp: String = types[randi() % types.size()]
+		atk.play_attack(tp, float(Stickman.ATK[tp]["dur"]) * 1.2)
 		duel_turn = 1 - duel_turn
 		get_tree().create_timer(0.24).timeout.connect(func():
 			if is_instance_valid(tgt):
