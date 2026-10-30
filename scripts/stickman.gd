@@ -60,6 +60,23 @@ var reach := 56.0
 var is_player := false
 var show_bar := 0.0
 var flip := false
+# per-fighter gameplay state (used by battle.gd for every player)
+var combo := 0
+var combo_t := 0.0
+var queued_t := 0.0
+var coyote := 0.0
+var jump_cut := false
+var run_dust_t := 0.0
+var dash_cd := 0.0
+var finisher := false
+var dmg_mult := 1.0
+var spd_mult := 1.0
+# networking
+var net_id := 0
+var tag := ""
+var nx := 0.0
+var ny := 0.0
+var seen_t := 0.0
 
 var _kc := {}
 
@@ -109,6 +126,22 @@ func die() -> void:
 	atk_t = -1.0
 	flash = 0.12
 	pop_vy = -300.0
+
+
+func revive(hp_frac: float) -> void:
+	dead = false
+	dead_t = 0.0
+	flip = false
+	hurt_t = 0.0
+	atk_t = -1.0
+	pop_y = 0.0
+	pop_vy = 0.0
+	kbv = 0.0
+	vx = 0.0
+	vy = 0.0
+	on_ground = true
+	hp = max_hp * hp_frac
+	set_process(true)
 
 
 func make_corpse() -> void:
@@ -366,6 +399,10 @@ func _draw() -> void:
 		_smear(arm_f[2], wa, leg_f[2])
 
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	if tag != "" and not dead:
+		var ty := -(HIP_H + TORSO + HEAD_R * 2.0 + 30.0) * s + pop_y
+		var tf: Font = Game.font if Game.font != null else ThemeDB.fallback_font
+		draw_string(tf, Vector2(-60, ty), tag, HORIZONTAL_ALIGNMENT_CENTER, 120.0, 18, Color(1, 1, 1, 0.85))
 	if show_bar > 0.0 and not dead and not is_player:
 		var by := -(HIP_H + TORSO + HEAD_R * 2.0 + 18.0) * s + pop_y
 		var ratio := clampf(hp / max_hp, 0.0, 1.0)

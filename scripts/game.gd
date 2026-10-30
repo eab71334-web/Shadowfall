@@ -17,6 +17,7 @@ var upgrades := {"vit": 0, "pow": 0, "agi": 0}
 var stars := {}
 var current_level := 1
 var autoplay := false
+var pname := ""
 var font: Font
 var ui_theme: Theme
 
@@ -61,6 +62,13 @@ const TR := {
 	"kills": ["Kills", "القتلى"], "reward": ["Coins", "العملات"],
 	"wave_clear": ["WAVE CLEARED", "تم صد الموجة"],
 	"tagline": ["Rise from the shadows", "انهض من بين الظلال"],
+	"lan": ["LAN PLAY", "لعب جماعي"], "host": ["HOST ROOM", "إنشاء غرفة"], "join": ["JOIN ROOM", "الانضمام لغرفة"],
+	"rooms": ["Rooms on your Wi-Fi", "الغرف على شبكتك"], "no_rooms": ["Searching for rooms...", "جاري البحث عن غرف..."],
+	"ip_hint": ["Or type the host IP", "أو اكتب عنوان IP للمضيف"], "connect": ["CONNECT", "اتصال"], "start": ["START", "ابدأ"],
+	"waiting": ["Waiting for the host to start...", "بانتظار المضيف ليبدأ..."], "players": ["Players", "اللاعبون"],
+	"lan_hint": ["Both devices must be on the same Wi-Fi", "الجهازان لازم يكونان على نفس الواي فاي"],
+	"your_ip": ["Your IP", "عنوان IP الخاص بك"], "failed": ["Could not connect", "تعذر الاتصال"],
+	"lvl": ["Level", "المرحلة"], "lost_conn": ["Connection lost", "انقطع الاتصال"],
 	"hits": ["HITS", "ضربة"], "finish": ["FINISH!", "القاضية!"],
 	"reset": ["Reset progress", "مسح التقدم"], "reset_ok": ["Tap again to confirm", "اضغط مرة أخرى للتأكيد"],
 }
@@ -68,6 +76,8 @@ const TR := {
 
 func _ready() -> void:
 	load_game()
+	if pname == "":
+		pname = "Player%d" % (randi() % 900 + 100)
 	var f = load("res://assets/fonts/ui.ttf")
 	font = f if f != null else ThemeDB.fallback_font
 	ui_theme = Theme.new()

@@ -25,7 +25,18 @@ func _ready() -> void:
 	ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui_layer.add_child(ui_root)
-	if "autoplay" in OS.get_cmdline_user_args():
+	Net.battle_start.connect(_on_net_start)
+	Net.join_failed.connect(_on_join_failed)
+	var uargs := OS.get_cmdline_user_args()
+	for ua in uargs:
+		var us: String = ua
+		if us == "--lan-host":
+			_ci_lan_host()
+			return
+		if us.begins_with("--lan-join="):
+			_ci_lan_join(us.substr(11))
+			return
+	if "--autoplay" in uargs or "autoplay" in uargs:
 		Game.autoplay = true
 		Game.sound_on = false
 		Game.owned = ["fists", "sword"]
@@ -78,12 +89,12 @@ func _build_menu_scene() -> void:
 		c.make_corpse()
 	duel_a = Stickman.new()
 	duel_a.weapon = Game.WEAPONS["katana"]
-	duel_a.s = 1.3
+	duel_a.s = 1.15
 	duel_a.facing = 1
 	duel_a.position = Vector2(vw * 0.40, gy)
 	duel_b = Stickman.new()
 	duel_b.weapon = Game.WEAPONS["sword"]
-	duel_b.s = 1.3
+	duel_b.s = 1.15
 	duel_b.facing = -1
 	duel_b.position = Vector2(vw * 0.60, gy)
 	menu_root.add_child(duel_a)
@@ -169,13 +180,16 @@ func show_menu() -> void:
 	hb.alignment = BoxContainer.ALIGNMENT_CENTER
 	hb.add_theme_constant_override("separation", 18)
 	vb.add_child(hb)
-	var bp := UIKit.button(Game.t("play"), Vector2(320, 84), true, 36)
+	var bp := UIKit.button(Game.t("play"), Vector2(290, 84), true, 34)
 	bp.pressed.connect(show_levels)
 	hb.add_child(bp)
-	var bs := UIKit.button(Game.t("shop"), Vector2(230, 84), false, 30)
+	var bs := UIKit.button(Game.t("shop"), Vector2(200, 84), false, 28)
 	bs.pressed.connect(show_shop)
 	hb.add_child(bs)
-	var bt := UIKit.button(Game.t("settings"), Vector2(230, 84), false, 30)
+	var bl := UIKit.button(Game.t("lan"), Vector2(230, 84), false, 26)
+	bl.pressed.connect(show_lan)
+	hb.add_child(bl)
+	var bt := UIKit.button(Game.t("settings"), Vector2(220, 84), false, 26)
 	bt.pressed.connect(show_settings)
 	hb.add_child(bt)
 	var pill := _coin_pill()
@@ -429,6 +443,7 @@ func start_battle(n: int) -> void:
 		current.queue_free()
 		current = null
 	battle = Battle.new()
+	battle.name = "Battle"
 	battle.level_n = n
 	battle.exit.connect(_on_battle_exit)
 	add_child(battle)
@@ -436,6 +451,7 @@ func start_battle(n: int) -> void:
 
 func _on_battle_exit(action: String, data: Dictionary) -> void:
 	if battle:
+		battle.name = "BattleOld"
 		battle.queue_free()
 		battle = null
 	get_tree().paused = false
@@ -473,6 +489,13 @@ func show_result(win: bool, data: Dictionary) -> void:
 	var reward := int(data["coins"]) if win else int(float(data["coins"]) * 0.5)
 	vb.add_child(UIKit.label("%s: +%d" % [Game.t("reward"), reward], 28, UIKit.GOLD))
 	var lvl := int(data["level"])
+	if Net.active:
+		var bm2 := UIKit.button(Game.t("menu"), Vector2(400, 66), true, 28)
+		bm2.pressed.connect(func():
+			Net.leave()
+			show_menu())
+		vb.add_child(bm2)
+		return
 	if win and lvl < Game.MAX_LEVEL:
 		var bn := UIKit.button(Game.t("next"), Vector2(400, 66), true, 28)
 		bn.pressed.connect(func(): start_battle(lvl + 1))
@@ -483,3 +506,197 @@ func show_result(win: bool, data: Dictionary) -> void:
 	var bm := UIKit.button(Game.t("menu"), Vector2(400, 60), false, 26)
 	bm.pressed.connect(show_menu)
 	vb.add_child(bm)
+
+
+# ------------------------------------------------------------ LAN
+var lan_level := 1
+var ci_started := false
+var lan_list: VBoxContainer
+var lan_ip_edit: LineEdit
+var lan_msg: Label
+
+
+func _on_net_start(level: int) -> void:
+	start_battle(level)
+
+
+func _on_join_failed() -> void:
+	if lan_msg:
+		lan_msg.text = Game.t("failed")
+
+
+func show_lan() -> void:
+	_menu_fighters(false)
+	Net.leave()
+	var s := _new_screen()
+	_top_bar(s, Game.t("lan"), show_menu)
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cc.offset_top = 80
+	s.add_child(cc)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 18)
+	cc.add_child(vb)
+	var bh := UIKit.button(Game.t("host"), Vector2(520, 96), true, 34)
+	bh.pressed.connect(func():
+		if Net.host_room():
+			show_lobby()
+		else:
+			show_lan())
+	vb.add_child(bh)
+	var bj := UIKit.button(Game.t("join"), Vector2(520, 96), false, 34)
+	bj.pressed.connect(show_join)
+	vb.add_child(bj)
+	vb.add_child(UIKit.label(Game.t("lan_hint"), 22, Color(1, 1, 1, 0.8)))
+
+
+func show_join() -> void:
+	_menu_fighters(false)
+	Net.start_discovery()
+	var s := _new_screen()
+	_top_bar(s, Game.t("join"), func():
+		Net.stop_discovery()
+		show_lan())
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cc.offset_top = 90
+	s.add_child(cc)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 12)
+	vb.custom_minimum_size = Vector2(760, 0)
+	cc.add_child(vb)
+	vb.add_child(UIKit.label(Game.t("rooms"), 28, UIKit.GOLD))
+	lan_list = VBoxContainer.new()
+	lan_list.add_theme_constant_override("separation", 10)
+	vb.add_child(lan_list)
+	vb.add_child(UIKit.label(Game.t("ip_hint"), 22, Color(1, 1, 1, 0.8)))
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 12)
+	vb.add_child(hb)
+	lan_ip_edit = LineEdit.new()
+	lan_ip_edit.placeholder_text = "192.168.1.5"
+	lan_ip_edit.custom_minimum_size = Vector2(420, 64)
+	lan_ip_edit.add_theme_font_size_override("font_size", 28)
+	hb.add_child(lan_ip_edit)
+	var bc := UIKit.button(Game.t("connect"), Vector2(250, 64), true, 26)
+	bc.pressed.connect(func(): _join_ip(lan_ip_edit.text))
+	hb.add_child(bc)
+	lan_msg = UIKit.label("", 22, Color(1, 0.5, 0.5))
+	vb.add_child(lan_msg)
+	if not Net.rooms_changed.is_connected(_refresh_rooms):
+		Net.rooms_changed.connect(_refresh_rooms)
+	_refresh_rooms()
+
+
+func _refresh_rooms() -> void:
+	if lan_list == null or not is_instance_valid(lan_list):
+		return
+	for ch in lan_list.get_children():
+		ch.queue_free()
+	if Net.rooms.is_empty():
+		lan_list.add_child(UIKit.label(Game.t("no_rooms"), 24, Color(1, 1, 1, 0.7)))
+		return
+	for ip in Net.rooms.keys():
+		var r: Dictionary = Net.rooms[ip]
+		var b := UIKit.button("%s   (%d)   %s" % [str(r["name"]), int(r["count"]), ip], Vector2(760, 64), false, 24)
+		var ipc: String = ip
+		b.pressed.connect(func(): _join_ip(ipc))
+		lan_list.add_child(b)
+
+
+func _join_ip(ip: String) -> void:
+	if ip.strip_edges() == "":
+		return
+	if lan_msg:
+		lan_msg.text = "..."
+	if Net.join_room(ip):
+		Net.stop_discovery()
+		show_lobby()
+	elif lan_msg:
+		lan_msg.text = Game.t("failed")
+
+
+func show_lobby() -> void:
+	_menu_fighters(false)
+	var s := _new_screen()
+	_top_bar(s, Game.t("lan"), func():
+		Net.leave()
+		show_lan())
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cc.offset_top = 90
+	s.add_child(cc)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 12)
+	vb.custom_minimum_size = Vector2(640, 0)
+	cc.add_child(vb)
+	if Net.is_host:
+		vb.add_child(UIKit.label("%s: %s" % [Game.t("your_ip"), Net.local_ip()], 26, UIKit.GOLD))
+	vb.add_child(UIKit.label(Game.t("players"), 30))
+	var pl := VBoxContainer.new()
+	pl.add_theme_constant_override("separation", 8)
+	vb.add_child(pl)
+	var fill := func():
+		if not is_instance_valid(pl):
+			return
+		for ch in pl.get_children():
+			ch.queue_free()
+		for id in Net.players.keys():
+			var info: Dictionary = Net.players[id]
+			var tag := "%s  -  %s" % [str(info["name"]), Game.wname(str(info["weapon"]))]
+			var pn := UIKit.panel(UIKit.CARD)
+			pn.add_child(UIKit.label(tag, 26, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT))
+			pl.add_child(pn)
+	fill.call()
+	if not Net.players_changed.is_connected(fill):
+		Net.players_changed.connect(fill)
+	if Net.is_host:
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 14)
+		vb.add_child(row)
+		var lv := UIKit.label("%s %d" % [Game.t("lvl"), lan_level], 28)
+		lv.custom_minimum_size = Vector2(200, 0)
+		var bminus := UIKit.button("<", Vector2(70, 64), false, 30)
+		bminus.pressed.connect(func():
+			lan_level = maxi(1, lan_level - 1)
+			lv.text = "%s %d" % [Game.t("lvl"), lan_level])
+		var bplus := UIKit.button(">", Vector2(70, 64), false, 30)
+		bplus.pressed.connect(func():
+			var top := 1
+			for n in range(1, Game.MAX_LEVEL + 1):
+				if Game.is_unlocked(n):
+					top = n
+			lan_level = mini(top, lan_level + 1)
+			lv.text = "%s %d" % [Game.t("lvl"), lan_level])
+		row.add_child(bminus)
+		row.add_child(lv)
+		row.add_child(bplus)
+		var bs := UIKit.button(Game.t("start"), Vector2(420, 78), true, 32)
+		bs.pressed.connect(func(): Net.start_battle(lan_level))
+		vb.add_child(bs)
+	else:
+		vb.add_child(UIKit.label(Game.t("waiting"), 24, Color(1, 1, 1, 0.8)))
+
+
+# ------------------------------------------------------------ CI helpers (used by the Actions LAN test)
+func _ci_lan_host() -> void:
+	Game.autoplay = true
+	Game.sound_on = false
+	Game.owned = ["fists", "sword"]
+	Game.equipped = "sword"
+	Game.pname = "HostBot"
+	Net.host_room()
+	Net.players_changed.connect(func():
+		if Net.players.size() >= 2 and not ci_started:
+			ci_started = true
+			get_tree().create_timer(1.0).timeout.connect(func(): Net.start_battle(1)))
+
+
+func _ci_lan_join(ip: String) -> void:
+	Game.autoplay = true
+	Game.sound_on = false
+	Game.owned = ["fists", "katana"]
+	Game.equipped = "katana"
+	Game.pname = "ClientBot"
+	Net.join_room(ip)
