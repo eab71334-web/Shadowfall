@@ -7,7 +7,7 @@ signal players_changed
 signal join_failed
 signal disconnected
 signal player_left(id: int)
-signal battle_start(level: int)
+signal battle_start(mode: String, param: int)
 
 const PORT := 47778
 const DISC_PORT := 47777
@@ -18,6 +18,8 @@ var is_host := false
 var room_name := ""
 var players := {}   # peer_id -> {"name","weapon","hp","dmg","spd"}
 var rooms := {}     # ip -> {"name","count","t"}
+var mode := "coop"   # "coop" or "arena"
+var param := 1      # co-op level or arena start map
 
 var _peer: ENetMultiplayerPeer
 var _tx: PacketPeerUDP
@@ -62,6 +64,8 @@ func host_room() -> bool:
 	is_host = true
 	room_name = Game.pname
 	players = {1: my_info()}
+	mode = "coop"
+	param = 1
 	_tx = PacketPeerUDP.new()
 	_tx.set_broadcast_enabled(true)
 	players_changed.emit()
@@ -181,6 +185,7 @@ func _sv_hello(info: Dictionary) -> void:
 
 func _sync_players() -> void:
 	rpc("_cl_players", players)
+	rpc("_cl_cfg", mode, param)
 	players_changed.emit()
 
 
@@ -190,16 +195,34 @@ func _cl_players(p: Dictionary) -> void:
 	players_changed.emit()
 
 
-func start_battle(level: int) -> void:
+func set_cfg(m: String, p: int) -> void:
+	if not is_host:
+		return
+	mode = m
+	param = p
+	rpc("_cl_cfg", mode, param)
+	players_changed.emit()
+
+
+@rpc("authority", "reliable")
+func _cl_cfg(m: String, p: int) -> void:
+	mode = m
+	param = p
+	players_changed.emit()
+
+
+func start_match() -> void:
 	if not is_host:
 		return
 	stop_discovery()
 	_tx = null
-	rpc("_cl_start", level, players)
-	battle_start.emit(level)
+	rpc("_cl_start", mode, param, players)
+	battle_start.emit(mode, param)
 
 
 @rpc("authority", "reliable")
-func _cl_start(level: int, p: Dictionary) -> void:
-	players = p
-	battle_start.emit(level)
+func _cl_start(m: String, p: int, pl: Dictionary) -> void:
+	players = pl
+	mode = m
+	param = p
+	battle_start.emit(mode, param)

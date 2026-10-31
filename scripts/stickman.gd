@@ -60,6 +60,10 @@ var reach := 56.0
 var is_player := false
 var show_bar := 0.0
 var flip := false
+var thin := false
+var gun_mode := false
+var recoil := 0.0
+var block_mode := false
 # per-fighter gameplay state (used by battle.gd for every player)
 var combo := 0
 var combo_t := 0.0
@@ -182,6 +186,8 @@ func _process(delta: float) -> void:
 				pop_vy = 0.0
 	if flash > 0.0:
 		flash -= delta
+	if recoil > 0.0:
+		recoil = maxf(0.0, recoil - delta * 8.0)
 	if show_bar > 0.0:
 		show_bar -= delta
 	queue_redraw()
@@ -354,6 +360,20 @@ func _draw() -> void:
 		if pop_y < -3.0:
 			rot = -float(facing) * minf(0.5, -pop_y / 90.0)
 
+	if gun_mode and not dead and atk_t < 0.0:
+		var aim := pose_.duplicate()
+		aim["hf"] = Vector2(25.0 - recoil * 9.0, -1.0)
+		aim["hb"] = Vector2(14.0 - recoil * 5.0, 3.0)
+		aim["wa"] = -recoil * 0.12
+		aim["ta"] = clampf(float(pose_["ta"]), -0.2, 0.2) * 0.6 + 0.05
+		pose_ = aim
+	if block_mode and not dead and atk_t < 0.0:
+		var blk := pose_.duplicate()
+		blk["hf"] = Vector2(17.0, -15.0)
+		blk["hb"] = Vector2(12.0, -9.0)
+		blk["ta"] = 0.18
+		blk["wa"] = -1.2
+		pose_ = blk
 	draw_set_transform(Vector2(0, pop_y - 6.0 * lie_k), rot, Vector2(float(facing) * s, s))
 	var c := col.lerp(Color(1, 1, 1), clampf(flash / 0.12, 0.0, 1.0) * 0.9)
 
@@ -382,18 +402,22 @@ func _draw() -> void:
 		for i in 4:
 			draw_line(Vector2(-34.0 - i * 8.0, -85.0 + i * 20.0), Vector2(-100.0 - i * 12.0, -85.0 + i * 20.0), Color(1, 1, 1, 0.30), 2.0, true)
 
-	_stroke(arm_b, c, 5.8, 4.8)
-	_stroke(leg_b, c, 8.2, 6.4)
-	draw_line(leg_b[2], leg_b[2] + Vector2(7, 0), c, 5.0, true)
-	draw_line(hip, shoulder, c, 9.5, true)
-	draw_circle(hip, 5.2, c)
-	draw_circle(shoulder, 5.8, c)
-	draw_line(shoulder, neck, c, 5.2, true)
-	draw_circle(head, HEAD_R, c)
-	_stroke(leg_f, c, 8.2, 6.4)
-	draw_line(leg_f[2], leg_f[2] + Vector2(7, 0), c, 5.0, true)
-	_stroke(arm_f, c, 6.0, 5.0)
-	draw_circle(arm_f[2], 3.8, c)
+	var wm := 0.52 if thin else 1.0
+	var hm := 0.9 if thin else 1.0
+	_stroke(arm_b, c, 5.8 * wm, 4.8 * wm)
+	_stroke(leg_b, c, 8.2 * wm, 6.4 * wm)
+	draw_line(leg_b[2], leg_b[2] + Vector2(7, 0), c, 5.0 * wm, true)
+	draw_line(hip, shoulder, c, 9.5 * wm, true)
+	draw_circle(hip, 5.2 * wm, c)
+	draw_circle(shoulder, 5.8 * wm, c)
+	draw_line(shoulder, neck, c, 5.2 * wm, true)
+	draw_circle(head, HEAD_R * hm, c)
+	_stroke(leg_f, c, 8.2 * wm, 6.4 * wm)
+	draw_line(leg_f[2], leg_f[2] + Vector2(7, 0), c, 5.0 * wm, true)
+	_stroke(arm_f, c, 6.0 * wm, 5.0 * wm)
+	draw_circle(arm_f[2], 3.8 * wm, c)
+	if block_mode and not dead:
+		draw_arc(Vector2(26, -64), 32.0, -1.2, 1.2, 16, Color(1, 1, 1, 0.45), 3.5, true)
 	if not dead:
 		_weapon(arm_f[2], wa, shoulder)
 		_smear(arm_f[2], wa, leg_f[2])
@@ -446,36 +470,8 @@ func _smear(hand: Vector2, wa: float, foot: Vector2) -> void:
 				draw_line(foot + Vector2(-6.0, -6.0 + i * 6.0), foot + Vector2(-50.0, -10.0 + i * 8.0), Color(1, 1, 1, 0.40 * fade), 2.0, true)
 
 
-func _weapon(hand: Vector2, ang: float, shoulder: Vector2) -> void:
+func _weapon(hand: Vector2, ang: float, _shoulder: Vector2) -> void:
 	var k := String(weapon.get("kind", "fist"))
-	var L := float(weapon.get("len", 0)) * 1.1
-	var d := Vector2.from_angle(ang)
-	var n := Vector2(-d.y, d.x)
-	var steel := Color(0.9, 0.92, 0.95)
-	match k:
-		"dagger":
-			draw_line(hand - d * 3.0, hand + d * L, steel, 3.0, true)
-			draw_line(hand - n * 3.5, hand + n * 3.5, col, 2.8, true)
-		"sword":
-			draw_line(hand - d * 7.0, hand, col, 3.8, true)
-			draw_line(hand - n * 6.0, hand + n * 6.0, col, 3.4, true)
-			draw_line(hand, hand + d * L, Color(1, 1, 1, 0.20), 8.0, true)
-			draw_line(hand, hand + d * L, steel, 3.4, true)
-		"katana":
-			var kc := Color(0.82, 0.93, 1.0)
-			draw_line(hand - d * 9.0, hand, col, 3.6, true)
-			draw_line(hand - n * 4.5, hand + n * 4.5, col, 3.2, true)
-			draw_line(hand, hand + d * L, Color(0.7, 0.9, 1.0, 0.22), 8.0, true)
-			draw_line(hand, hand + d * L, kc, 2.8, true)
-		"spear":
-			draw_line(hand - d * 24.0, hand + d * (L - 12.0), col, 3.4, true)
-			var tip := hand + d * L
-			draw_colored_polygon(PackedVector2Array([hand + d * (L - 16.0) + n * 5.0, tip, hand + d * (L - 16.0) - n * 5.0]), steel)
-		"axe":
-			draw_line(hand - d * 8.0, hand + d * L, col, 3.6, true)
-			var e := hand + d * (L - 6.0)
-			draw_colored_polygon(PackedVector2Array([e + n * 2.0 - d * 9.0, e + n * 19.0 + d * 2.0, e + n * 2.0 + d * 11.0]), Color(0.72, 0.74, 0.78))
-		"hammer":
-			draw_line(hand - d * 8.0, hand + d * L, col, 4.2, true)
-			var e2 := hand + d * L
-			draw_colored_polygon(PackedVector2Array([e2 + n * 12.0 - d * 8.0, e2 + n * 12.0 + d * 10.0, e2 - n * 12.0 + d * 10.0, e2 - n * 12.0 - d * 8.0]), Color(0.55, 0.56, 0.6))
+	if k == "fist":
+		return
+	WeaponArt.draw(self, k, hand, ang, float(weapon.get("len", 0)) * 1.1, col)

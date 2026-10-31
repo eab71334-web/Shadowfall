@@ -2,10 +2,11 @@ extends Control
 class_name TouchControls
 # Multi-touch buttons: left / right / jump / dash / attack. Keyboard works too (A D W K J / arrows).
 
-var held := {"left": false, "right": false, "jump": false, "attack": false, "dash": false}
+var held := {"left": false, "right": false, "jump": false, "attack": false, "dash": false, "block": false}
 var pressed_at := {"jump": -1000, "attack": -1000, "dash": -1000}
 var touches := {}
 var bot := false
+var grab_mode := false
 var bot_axis := 0.0
 var rects := {}
 
@@ -24,6 +25,7 @@ func _layout() -> void:
 	rects["attack"] = Vector3(sz.x - 130, sz.y - 125, 72)
 	rects["jump"] = Vector3(sz.x - 290, sz.y - 95, 50)
 	rects["dash"] = Vector3(sz.x - 235, sz.y - 240, 46)
+	rects["block"] = Vector3(sz.x - 380, sz.y - 215, 44)
 	queue_redraw()
 
 
@@ -136,8 +138,16 @@ func _icon(n: String, c: Vector2, r: float, col: Color) -> void:
 		"jump":
 			draw_polyline(PackedVector2Array([c + Vector2(-u, u * 0.5), c + Vector2(0, -u * 0.6), c + Vector2(u, u * 0.5)]), col, 5.0, true)
 		"dash":
-			draw_polyline(PackedVector2Array([c + Vector2(-u, -u), c + Vector2(0, 0), c + Vector2(-u, u)]), col, 4.0, true)
-			draw_polyline(PackedVector2Array([c + Vector2(0, -u), c + Vector2(u, 0), c + Vector2(0, u)]), col, 4.0, true)
+			if grab_mode:
+				draw_arc(c + Vector2(0, -u * 0.2), u * 0.9, PI, TAU, 14, col, 4.0, true)
+				draw_line(c + Vector2(-u * 0.9, -u * 0.2), c + Vector2(-u * 0.9, u * 0.8), col, 4.0, true)
+				draw_line(c + Vector2(u * 0.9, -u * 0.2), c + Vector2(u * 0.9, u * 0.8), col, 4.0, true)
+				draw_line(c + Vector2(-u * 0.9, u * 0.8), c + Vector2(u * 0.9, u * 0.8), col, 4.0, true)
+			else:
+				draw_polyline(PackedVector2Array([c + Vector2(-u, -u), c + Vector2(0, 0), c + Vector2(-u, u)]), col, 4.0, true)
+				draw_polyline(PackedVector2Array([c + Vector2(0, -u), c + Vector2(u, 0), c + Vector2(0, u)]), col, 4.0, true)
+		"block":
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-u, -u), c + Vector2(u, -u), c + Vector2(u, u * 0.2), c + Vector2(0, u * 1.1), c + Vector2(-u, u * 0.2)]), col)
 		"attack":
 			draw_line(c + Vector2(-u, u), c + Vector2(u, -u), col, 6.0, true)
 			draw_line(c + Vector2(-u, -u), c + Vector2(u, u), col, 6.0, true)

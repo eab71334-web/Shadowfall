@@ -30,6 +30,12 @@ func slash(pos: Vector2, dir: int, size := 110.0) -> void:
 	items.append({"k": "slash", "p": pos, "t": 0.0, "d": 0.26, "s": size, "dir": dir})
 
 
+func drops(pos: Vector2, col: Color, n := 10) -> void:
+	for i in n:
+		var a := randf_range(-PI, 0.0)
+		items.append({"k": "drop", "p": pos, "v": Vector2.from_angle(a) * randf_range(120.0, 520.0), "t": 0.0, "d": 0.6 + randf() * 0.5, "c": col})
+
+
 func dust(pos: Vector2, n := 4) -> void:
 	for i in n:
 		items.append({"k": "dust", "p": pos + Vector2(randf_range(-10.0, 10.0), -2.0), "v": Vector2(randf_range(-60.0, 60.0), randf_range(-50.0, -10.0)), "t": 0.0, "d": 0.35 + randf() * 0.2, "r": 5.0 + randf() * 5.0})
@@ -46,7 +52,10 @@ func _process(delta: float) -> void:
 	while i >= 0:
 		var it: Dictionary = items[i]
 		it["t"] = float(it["t"]) + delta
-		if it["k"] == "spark" or it["k"] == "dust":
+		if it["k"] == "drop":
+			it["p"] = it["p"] + it["v"] * delta
+			it["v"] = it["v"] + Vector2(0, 1500.0 * delta)
+		elif it["k"] == "spark" or it["k"] == "dust":
 			it["p"] = it["p"] + it["v"] * delta
 			it["v"] = it["v"] * 0.92
 		elif it["k"] == "text":
@@ -81,6 +90,10 @@ func _draw() -> void:
 					a0 = t0
 				for j in 4:
 					draw_arc(cc, sz2 - float(j) * 6.0, a0, a1, 28, Color(1, 1, 1, (0.9 - float(j) * 0.2) * (1.0 - k)), maxf(1.0, (9.0 - float(j) * 2.0) * (1.0 - k * 0.6)), true)
+			"drop":
+				var dc: Color = it["c"]
+				dc.a = 1.0 - k
+				draw_circle(p, 3.0, dc)
 			"dust":
 				draw_circle(p, float(it["r"]) * (0.7 + k), Color(1, 0.92, 0.85, 0.20 * (1.0 - k)))
 			"ring":
