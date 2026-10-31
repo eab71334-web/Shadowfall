@@ -79,7 +79,7 @@ jobs:
 
   ios:
     name: iOS IPA (unsigned)
-    runs-on: macos-15
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -179,3 +179,155 @@ jobs:
             preview.mp4
             import_log.txt
             run_log.txt
+
+  lan-test:
+    name: LAN test (host + client on one machine)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project (game.zip or plain files)
+        run: |
+          mkdir -p _game
+          if [ -f game.zip ]; then
+            unzip -q -o game.zip -d _game
+          else
+            rsync -a --exclude=_game --exclude=.git ./ _game/
+          fi
+          if [ ! -f _game/project.godot ]; then
+            sub=$(dirname "$(find _game -maxdepth 3 -name project.godot | head -1)")
+            mv "$sub" _game2 && rm -rf _game && mv _game2 _game
+          fi
+
+      - name: Install tools and Godot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb ffmpeg libgl1-mesa-dri libglx-mesa0 libxcursor1 libxinerama1 libxi6 libxrandr2 libasound2 libpulse0 > /dev/null
+          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          wget -q $B/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+
+      - name: Run host and client
+        working-directory: _game
+        run: |
+          godot --headless --path . --import > ../lan_import_log.txt 2>&1 || true
+          godot --headless --path . -- --lan-host > ../host_log.txt 2>&1 &
+          sleep 6
+          xvfb-run -a -s "-screen 0 1280x600x24" godot --path . --rendering-driver opengl3 --write-movie ../lan_client.avi --fixed-fps 30 --quit-after 1200 -- --lan-join=127.0.0.1 > ../client_log.txt 2>&1 || true
+          kill %1 || true
+          ffmpeg -y -loglevel error -i ../lan_client.avi -c:v libx264 -pix_fmt yuv420p ../lan_client.mp4 || true
+
+      - name: Show errors
+        if: always()
+        run: grep -n -i "error" lan_import_log.txt host_log.txt client_log.txt | head -40 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shadowfall-LAN-test
+          path: |
+            lan_client.mp4
+            lan_import_log.txt
+            host_log.txt
+            client_log.txt
+
+  arena-test:
+    name: Arena test (4 bots)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project (game.zip or plain files)
+        run: |
+          mkdir -p _game
+          if [ -f game.zip ]; then
+            unzip -q -o game.zip -d _game
+          else
+            rsync -a --exclude=_game --exclude=.git ./ _game/
+          fi
+          if [ ! -f _game/project.godot ]; then
+            sub=$(dirname "$(find _game -maxdepth 3 -name project.godot | head -1)")
+            mv "$sub" _game2 && rm -rf _game && mv _game2 _game
+          fi
+
+      - name: Install tools and Godot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb ffmpeg libgl1-mesa-dri libglx-mesa0 libxcursor1 libxinerama1 libxi6 libxrandr2 libasound2 libpulse0 > /dev/null
+          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          wget -q $B/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+
+      - name: Record auto-play gameplay
+        working-directory: _game
+        run: |
+          godot --headless --path . --import > ../arena_import_log.txt 2>&1 || true
+          xvfb-run -a -s "-screen 0 1280x600x24" godot --path . --rendering-driver opengl3 --write-movie ../arena.avi --fixed-fps 30 --quit-after 1800 -- --arena-bots > ../arena_log.txt 2>&1 || true
+          ffmpeg -y -loglevel error -i ../arena.avi -c:v libx264 -pix_fmt yuv420p ../arena.mp4 || true
+
+      - name: Show script errors
+        if: always()
+        run: grep -n -i "error" arena_import_log.txt arena_log.txt | head -40 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shadowfall-arena
+          path: |
+            arena.mp4
+            arena_import_log.txt
+            arena_log.txt
+
+  lan-arena-test:
+    name: LAN Arena test (host + client)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project (game.zip or plain files)
+        run: |
+          mkdir -p _game
+          if [ -f game.zip ]; then
+            unzip -q -o game.zip -d _game
+          else
+            rsync -a --exclude=_game --exclude=.git ./ _game/
+          fi
+          if [ ! -f _game/project.godot ]; then
+            sub=$(dirname "$(find _game -maxdepth 3 -name project.godot | head -1)")
+            mv "$sub" _game2 && rm -rf _game && mv _game2 _game
+          fi
+
+      - name: Install tools and Godot
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb ffmpeg libgl1-mesa-dri libglx-mesa0 libxcursor1 libxinerama1 libxi6 libxrandr2 libasound2 libpulse0 > /dev/null
+          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          wget -q $B/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+
+      - name: Run host and client
+        working-directory: _game
+        run: |
+          godot --headless --path . --import > ../lanarena_import_log.txt 2>&1 || true
+          godot --headless --path . -- --lan-host --arena > ../lanarena_host_log.txt 2>&1 &
+          sleep 6
+          xvfb-run -a -s "-screen 0 1280x600x24" godot --path . --rendering-driver opengl3 --write-movie ../lanarena_client.avi --fixed-fps 30 --quit-after 1200 -- --lan-join=127.0.0.1 > ../lanarena_client_log.txt 2>&1 || true
+          kill %1 || true
+          ffmpeg -y -loglevel error -i ../lanarena_client.avi -c:v libx264 -pix_fmt yuv420p ../lanarena_client.mp4 || true
+
+      - name: Show errors
+        if: always()
+        run: grep -n -i "error" lanarena_import_log.txt lanarena_host_log.txt lanarena_client_log.txt | head -40 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Shadowfall-LAN-arena-test
+          path: |
+            lanarena_client.mp4
+            lanarena_import_log.txt
+            lanarena_host_log.txt
+            lanarena_client_log.txt
