@@ -879,7 +879,7 @@ func show_lobby() -> void:
 		show_lan())
 	lobby_body = Control.new()
 	lobby_body.set_anchors_preset(Control.PRESET_FULL_RECT)
-	lobby_body.offset_top = 90
+	lobby_body.offset_top = 84
 	s.add_child(lobby_body)
 	if not Net.players_changed.is_connected(_fill_lobby):
 		Net.players_changed.connect(_fill_lobby)
@@ -894,112 +894,149 @@ func _top_unlocked() -> int:
 	return top
 
 
+func _chip(txt: String, accent: Color) -> PanelContainer:
+	var c := UIKit.panel(Color(0.06, 0.07, 0.15, 0.94), Color(accent.r, accent.g, accent.b, 0.65))
+	c.add_child(UIKit.label(txt, 21, accent))
+	return c
+
+
 func _fill_lobby() -> void:
 	if lobby_body == null or not is_instance_valid(lobby_body):
 		return
 	for ch in lobby_body.get_children():
 		ch.queue_free()
-	var cc := CenterContainer.new()
-	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	lobby_body.add_child(cc)
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 16)
-	cc.add_child(vb)
-	# header chips
+	vb.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	vb.offset_left = 20
+	vb.offset_right = -20
+	vb.add_theme_constant_override("separation", 10)
+	lobby_body.add_child(vb)
+	var arena_mode := Net.mode == "arena"
+	# info chips
 	var chips := HBoxContainer.new()
 	chips.alignment = BoxContainer.ALIGNMENT_CENTER
-	chips.add_theme_constant_override("separation", 14)
+	chips.add_theme_constant_override("separation", 12)
 	vb.add_child(chips)
-	var ip_chip := UIKit.panel(Color(0.06, 0.07, 0.15, 0.94), Color(1, 0.85, 0.2, 0.6))
-	var host_ip := Net.local_ip() if Net.is_host else ""
-	ip_chip.add_child(UIKit.label(("%s: %s" % [Game.t("your_ip"), host_ip]) if Net.is_host else Game.t("lan_hint"), 22, UIKit.GOLD))
-	chips.add_child(ip_chip)
-	var mode_chip := UIKit.panel(Color(0.06, 0.07, 0.15, 0.94), Color(0.35, 0.75, 1.0, 0.6))
-	mode_chip.add_child(UIKit.label("%s: %s" % [Game.t("mode"), Game.t("pvp") if Net.mode == "arena" else Game.t("coop")], 22, Color(0.7, 0.9, 1.0)))
-	chips.add_child(mode_chip)
-	# slots
-	var slots := HBoxContainer.new()
-	slots.alignment = BoxContainer.ALIGNMENT_CENTER
-	slots.add_theme_constant_override("separation", 16)
-	vb.add_child(slots)
+	if Net.is_host:
+		chips.add_child(_chip("%s: %s" % [Game.t("your_ip"), Net.local_ip()], UIKit.GOLD))
+	else:
+		chips.add_child(_chip(Game.t("lan_hint"), UIKit.GOLD))
+	chips.add_child(_chip("%s: %s" % [Game.t("mode"), Game.t("pvp") if arena_mode else Game.t("coop")], Color(0.7, 0.9, 1.0)))
+	var where := ""
+	if arena_mode:
+		where = "%s: %s" % [Game.t("map"), Game.t("map%d" % posmod(Net.param, 6))]
+	else:
+		where = "%s %d" % [Game.t("lvl"), maxi(1, Net.param)]
+	chips.add_child(_chip(where, Color(1.0, 0.6, 0.5)))
+	# player slots (2 / 3 / 4)
 	var ids: Array = Net.players.keys()
 	ids.sort()
-	for i in 4:
+	var slots := HBoxContainer.new()
+	slots.alignment = BoxContainer.ALIGNMENT_CENTER
+	slots.add_theme_constant_override("separation", 14)
+	vb.add_child(slots)
+	for i in Net.max_players:
 		var col: Color = Arena.COLORS[i]
+		var filled := i < ids.size()
+		var is_bot := (not filled) and arena_mode and Net.fill_bots
 		var card := PanelContainer.new()
-		card.custom_minimum_size = Vector2(250, 280)
-		card.add_theme_stylebox_override("panel", _card_box(col, 0.85 if i < ids.size() else 0.25))
+		card.custom_minimum_size = Vector2(240, 200)
+		card.add_theme_stylebox_override("panel", _card_box(col, 0.9 if filled else (0.5 if is_bot else 0.25)))
 		slots.add_child(card)
 		var inner := VBoxContainer.new()
-		inner.add_theme_constant_override("separation", 6)
+		inner.add_theme_constant_override("separation", 4)
 		card.add_child(inner)
 		var prev := Control.new()
-		prev.custom_minimum_size = Vector2(218, 170)
+		prev.custom_minimum_size = Vector2(208, 104)
 		prev.clip_contents = true
 		inner.add_child(prev)
-		var floor_line := ColorRect.new()
-		floor_line.color = Color(1, 1, 1, 0.25)
-		floor_line.position = Vector2(20, 150)
-		floor_line.size = Vector2(178, 2)
-		prev.add_child(floor_line)
-		if i < ids.size():
-			var info: Dictionary = Net.players[ids[i]]
+		var fl := ColorRect.new()
+		fl.color = Color(1, 1, 1, 0.22)
+		fl.position = Vector2(16, 96)
+		fl.size = Vector2(176, 2)
+		prev.add_child(fl)
+		if filled or is_bot:
 			var st := Stickman.new()
 			st.thin = true
-			st.col = col
+			st.col = col if filled else Color(col.r, col.g, col.b, 0.45)
 			st.weapon = Game.WEAPONS["fists"]
-			st.position = Vector2(109, 150)
-			st.s = 1.25
+			st.position = Vector2(104, 96)
+			st.s = 0.95
 			prev.add_child(st)
-			inner.add_child(UIKit.label(str(info["name"]), 26, col))
+		else:
+			var q := UIKit.label("?", 64, Color(1, 1, 1, 0.12))
+			q.position = Vector2(0, 14)
+			q.size = Vector2(208, 76)
+			prev.add_child(q)
+		if filled:
+			var info: Dictionary = Net.players[ids[i]]
+			inner.add_child(UIKit.label(str(info["name"]), 24, col))
 			var tag := Game.t("host_tag") if ids[i] == 1 else "Player %d" % (i + 1)
 			if ids[i] == multiplayer.get_unique_id():
 				tag = Game.t("you")
-			inner.add_child(UIKit.label(tag, 18, Color(1, 1, 1, 0.6)))
+			inner.add_child(UIKit.label(tag, 17, Color(1, 1, 1, 0.6)))
+		elif is_bot:
+			inner.add_child(UIKit.label("Bot %d" % (i - ids.size() + 1), 22, Color(col.r, col.g, col.b, 0.7)))
+			inner.add_child(UIKit.label(Game.t("bot_tag"), 17, Color(1, 1, 1, 0.45)))
 		else:
-			var q := UIKit.label("?", 80, Color(1, 1, 1, 0.12))
-			q.position = Vector2(0, 30)
-			q.size = Vector2(218, 100)
-			prev.add_child(q)
-			inner.add_child(UIKit.label(Game.t("slot_wait"), 20, Color(1, 1, 1, 0.45)))
+			inner.add_child(UIKit.label(Game.t("slot_wait"), 19, Color(1, 1, 1, 0.45)))
 	# host controls
 	if Net.is_host:
-		var seg := HBoxContainer.new()
-		seg.alignment = BoxContainer.ALIGNMENT_CENTER
-		seg.add_theme_constant_override("separation", 12)
-		vb.add_child(seg)
-		var bc := UIKit.button(Game.t("coop"), Vector2(220, 56), Net.mode == "coop", 22)
+		var r1 := HBoxContainer.new()
+		r1.alignment = BoxContainer.ALIGNMENT_CENTER
+		r1.add_theme_constant_override("separation", 10)
+		vb.add_child(r1)
+		var bc := UIKit.button(Game.t("coop"), Vector2(150, 50), not arena_mode, 20)
 		bc.pressed.connect(func(): Net.set_cfg("coop", clampi(lan_level, 1, _top_unlocked())))
-		seg.add_child(bc)
-		var ba := UIKit.button(Game.t("pvp"), Vector2(220, 56), Net.mode == "arena", 22)
+		r1.add_child(bc)
+		var ba := UIKit.button(Game.t("pvp"), Vector2(150, 50), arena_mode, 20)
 		ba.pressed.connect(func(): Net.set_cfg("arena", 0))
-		seg.add_child(ba)
-		var sel := HBoxContainer.new()
-		sel.alignment = BoxContainer.ALIGNMENT_CENTER
-		sel.add_theme_constant_override("separation", 12)
-		vb.add_child(sel)
-		var lbl_txt := ""
-		if Net.mode == "arena":
-			lbl_txt = "%s: %s" % [Game.t("map"), Game.t("map%d" % Net.param)]
-		else:
-			lbl_txt = "%s %d" % [Game.t("lvl"), maxi(1, Net.param)]
-		var lv := UIKit.label(lbl_txt, 26)
-		lv.custom_minimum_size = Vector2(300, 0)
-		var bm := UIKit.button("<", Vector2(64, 54), false, 28)
+		r1.add_child(ba)
+		var sp := Control.new()
+		sp.custom_minimum_size = Vector2(18, 0)
+		r1.add_child(sp)
+		r1.add_child(UIKit.label(Game.t("sel_players"), 20, Color(1, 1, 1, 0.75)))
+		for n in [2, 3, 4]:
+			var cnt: int = n
+			var bn := UIKit.button(str(cnt), Vector2(60, 50), Net.max_players == cnt, 22)
+			bn.disabled = cnt < ids.size()
+			bn.pressed.connect(func(): Net.set_cfg(Net.mode, Net.param, cnt))
+			r1.add_child(bn)
+		if arena_mode:
+			var bb := UIKit.button("%s: %s" % [Game.t("bots_fill"), Game.t("on") if Net.fill_bots else Game.t("off")], Vector2(230, 50), Net.fill_bots, 18)
+			bb.pressed.connect(func(): Net.set_cfg(Net.mode, Net.param, -1, 0 if Net.fill_bots else 1))
+			r1.add_child(bb)
+		var r2 := HBoxContainer.new()
+		r2.alignment = BoxContainer.ALIGNMENT_CENTER
+		r2.add_theme_constant_override("separation", 12)
+		vb.add_child(r2)
+		var bm := UIKit.button("<", Vector2(64, 48), false, 26)
 		bm.pressed.connect(func(): _lan_step(-1))
-		var bp := UIKit.button(">", Vector2(64, 54), false, 28)
+		var bp := UIKit.button(">", Vector2(64, 48), false, 26)
 		bp.pressed.connect(func(): _lan_step(1))
-		sel.add_child(bm)
-		sel.add_child(lv)
-		sel.add_child(bp)
-		var bs := UIKit.button(Game.t("start"), Vector2(420, 70), true, 32)
-		bs.disabled = Net.mode == "arena" and Net.players.size() < 2
+		var lv := UIKit.label(where, 24)
+		lv.custom_minimum_size = Vector2(320, 0)
+		r2.add_child(bm)
+		r2.add_child(lv)
+		r2.add_child(bp)
+	# bottom action bar (always visible)
+	var bar := HBoxContainer.new()
+	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bar.offset_left = 40
+	bar.offset_right = -40
+	bar.offset_top = -86
+	bar.offset_bottom = -12
+	bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	bar.add_theme_constant_override("separation", 16)
+	lobby_body.add_child(bar)
+	if Net.is_host:
+		var need2 := arena_mode and (not Net.fill_bots) and Net.players.size() < 2
+		var bs := UIKit.button(Game.t("need2") if need2 else Game.t("start"), Vector2(560, 70), true, 30 if not need2 else 22)
+		bs.disabled = need2
 		bs.pressed.connect(func(): Net.start_match())
-		vb.add_child(bs)
-		if bs.disabled:
-			vb.add_child(UIKit.label(Game.t("need2"), 20, Color(1, 0.6, 0.5)))
+		bar.add_child(bs)
 	else:
-		vb.add_child(UIKit.label(Game.t("waiting"), 26, Color(1, 1, 1, 0.8)))
+		bar.add_child(UIKit.label(Game.t("waiting"), 26, Color(1, 1, 1, 0.85)))
 
 
 func _lan_step(d: int) -> void:

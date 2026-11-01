@@ -66,7 +66,7 @@ const TR := {
 	"fight": ["FIGHT!", "قاتل!"], "wins_round": ["wins the round", "فاز بالجولة"], "draw": ["DRAW", "تعادل"],
 	"mode": ["Mode", "الوضع"], "coop": ["CO-OP", "تعاوني"], "pvp": ["ARENA PVP", "مواجهة"], "map": ["Map", "الخريطة"],
 	"map0": ["Plateau", "الهضبة"], "map1": ["The Gap", "الفجوة"], "map2": ["Towers", "الأبراج"], "map3": ["Lava Pit", "حفرة الحمم"], "map4": ["Spikes", "الأشواك"], "map5": ["Elevator", "المصعد"],
-	"bots": ["Opponents", "الخصوم"], "first_to": ["First to", "الأول إلى"], "map_random": ["Random", "عشوائية"],
+	"bots": ["Opponents", "الخصوم"], "bots_fill": ["Fill with bots", "ملء بالروبوتات"], "bot_tag": ["BOT", "روبوت"], "sel_players": ["Players", "عدد اللاعبين"], "first_to": ["First to", "الأول إلى"], "map_random": ["Random", "عشوائية"],
 	"howto": ["Punch/shoot  |  Block (parry!)  |  Throw weapon  |  Air kick", "لكمة/إطلاق  |  صدّ (صدّ بتوقيت!)  |  رمي السلاح  |  ركلة هوائية"],
 	"slot_wait": ["Waiting for player...", "بانتظار لاعب..."], "host_tag": ["HOST", "المضيف"], "you": ["YOU", "أنت"],
 	"your_name": ["Your name", "اسمك"], "host_sub": ["Create a room. Friends join from the same Wi-Fi.", "أنشئ غرفة وأصدقاؤك ينضمون من نفس الواي فاي"],

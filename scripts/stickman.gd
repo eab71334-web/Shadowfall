@@ -64,6 +64,10 @@ var thin := false
 var gun_mode := false
 var recoil := 0.0
 var block_mode := false
+var spin := 0.0
+var spin_v := 0.0
+var _ps := {}
+var _dt := 0.016
 # per-fighter gameplay state (used by battle.gd for every player)
 var combo := 0
 var combo_t := 0.0
@@ -162,6 +166,15 @@ func _stride() -> float:
 
 func _process(delta: float) -> void:
 	t += delta
+	_dt = delta
+	if spin_v != 0.0 and not on_ground:
+		spin += spin_v * delta
+	elif spin != 0.0 or spin_v != 0.0:
+		spin_v = 0.0
+		var nearest := roundf(spin / TAU) * TAU
+		spin = lerp_angle(spin, nearest, minf(1.0, 14.0 * delta))
+		if absf(spin - nearest) < 0.02:
+			spin = 0.0
 	if dead:
 		dead_t += delta
 	else:
@@ -360,6 +373,27 @@ func _draw() -> void:
 		if pop_y < -3.0:
 			rot = -float(facing) * minf(0.5, -pop_y / 90.0)
 
+	if not dead:
+		var rate := 24.0
+		if atk_t >= 0.0:
+			rate = 40.0
+		elif (not on_ground) or hurt_t > 0.0:
+			rate = 13.0
+		if _ps.is_empty():
+			_ps = pose_
+		else:
+			_ps = _mix(_ps, pose_, 1.0 - exp(-rate * _dt))
+		pose_ = _ps
+		if thin and ((not on_ground) or hurt_t > 0.0):
+			var ph2 := t * 13.0 + seed_
+			pose_ = pose_.duplicate()
+			if not gun_mode:
+				pose_["hf"] = (pose_["hf"] as Vector2) + Vector2(sin(ph2) * 7.0, cos(ph2 * 0.9) * 7.0)
+				pose_["hb"] = (pose_["hb"] as Vector2) + Vector2(sin(ph2 + 2.0) * 7.0, cos(ph2 * 1.1 + 1.0) * 7.0)
+			pose_["ff"] = (pose_["ff"] as Vector2) + Vector2(sin(ph2 * 0.8) * 5.0, cos(ph2) * 3.0)
+			pose_["fb"] = (pose_["fb"] as Vector2) + Vector2(sin(ph2 * 0.7 + 1.5) * 5.0, cos(ph2 + 1.0) * 3.0)
+	else:
+		_ps = {}
 	if gun_mode and not dead and atk_t < 0.0:
 		var aim := pose_.duplicate()
 		aim["hf"] = Vector2(25.0 - recoil * 9.0, -1.0)
@@ -374,7 +408,12 @@ func _draw() -> void:
 		blk["ta"] = 0.18
 		blk["wa"] = -1.2
 		pose_ = blk
-	draw_set_transform(Vector2(0, pop_y - 6.0 * lie_k), rot, Vector2(float(facing) * s, s))
+	var tpos := Vector2(0, pop_y - 6.0 * lie_k)
+	if spin != 0.0 and not dead:
+		var piv := Vector2(0.0, -HIP_H * s)
+		tpos += piv - piv.rotated(spin)
+		rot += spin
+	draw_set_transform(tpos, rot, Vector2(float(facing) * s, s))
 	var c := col.lerp(Color(1, 1, 1), clampf(flash / 0.12, 0.0, 1.0) * 0.9)
 
 	var hx: float = pose_["hx"]

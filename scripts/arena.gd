@@ -141,6 +141,8 @@ var in_t := 0.0
 var shake := 0.0
 var ended := false
 var move_t := 0.0
+var cam_zoom := 1.0
+var cam_pos := Vector2(640, 300)
 var bg_t := 0.0
 var bg_seed: Array = []
 
@@ -177,6 +179,7 @@ func _ready() -> void:
 	add_child(fx)
 	cam = Camera2D.new()
 	cam.position = Vector2(W * 0.5, H * 0.5)
+	cam_pos = cam.position
 	add_child(cam)
 	cam.make_current()
 	_build_hud()
@@ -203,7 +206,8 @@ func _make_fighters() -> void:
 		var f := Fighter.new()
 		f.id = id
 		f.idx = i
-		f.bot = ((not net) and id != 1) or (id == my_id and Game.autoplay)
+		var info: Dictionary = Net.players[id] if net else {}
+		f.bot = ((not net) and id != 1) or (id == my_id and Game.autoplay) or (is_server and bool(info.get("bot", false)))
 		var st := Stickman.new()
 		st.thin = true
 		st.col = COLORS[i]
@@ -401,17 +405,46 @@ func _banner_all(title: String, sub := "", hold := 1.4) -> void:
 
 
 # ------------------------------------------------------------------ drawing
+func _cap(r: Rect2, c: Color) -> void:
+	var th := 14.0 if r.size.y > 24.0 else 10.0
+	var pts := PackedVector2Array()
+	var x := r.position.x
+	while x < r.end.x:
+		pts.append(Vector2(x, r.position.y - 3.0 + sin(x * 0.11) * 2.5 + sin(x * 0.31) * 1.5))
+		x += 10.0
+	pts.append(Vector2(r.end.x, r.position.y - 3.0))
+	pts.append(Vector2(r.end.x, r.position.y + th))
+	var xb := r.end.x
+	while xb > r.position.x:
+		pts.append(Vector2(xb, r.position.y + th + 2.0 + sin(xb * 0.17) * 3.0))
+		xb -= 14.0
+	pts.append(Vector2(r.position.x, r.position.y + th))
+	draw_colored_polygon(pts, c)
+
+
 func _draw() -> void:
-	var top := Color(0.05, 0.05, 0.16)
-	var bot := Color(0.13, 0.07, 0.2)
+	var snow := map_idx % 2 == 1
+	var top := Color(0.16, 0.15, 0.12)
+	var bot := Color(0.25, 0.23, 0.18)
+	var body := Color(0.09, 0.09, 0.11)
+	var capc := Color(0.78, 0.06, 0.22)
+	if snow:
+		top = Color(0.03, 0.1, 0.16)
+		bot = Color(0.05, 0.2, 0.26)
+		body = Color(0.1, 0.4, 0.42)
+		capc = Color(0.96, 0.98, 1.0)
 	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(W, 0), Vector2(W, H), Vector2(0, H)]), PackedColorArray([top, top, bot, bot]))
-	for i in 3:
-		var bx: float = float((bg_seed[i] as Vector2).x) * W
-		var by: float = H * (0.62 + 0.1 * float(i))
-		draw_colored_polygon(PackedVector2Array([Vector2(bx - 420, H), Vector2(bx - 160, by), Vector2(bx + 40, by - 60), Vector2(bx + 300, by + 10), Vector2(bx + 520, H)]), Color(0.1, 0.11, 0.16, 0.8))
-	for i in 7:
-		var s: Vector2 = bg_seed[2 + i]
-		draw_circle(Vector2(s.x * W, s.y * H * 0.5), 1.4, Color(1, 1, 1, 0.35))
+	if not snow:
+		for i in 7:
+			var s: Vector2 = bg_seed[i]
+			draw_circle(Vector2(s.x * W, s.y * H * 0.75), 90.0 + s.y * 90.0, Color(1, 1, 1, 0.035))
+	else:
+		for i in 48:
+			var hx := fposmod(sin(float(i) * 12.9898) * 43758.5453, 1.0)
+			var hy := fposmod(sin(float(i) * 78.233) * 12345.6789, 1.0)
+			var px := fposmod(hx * W + sin(bg_t * 0.8 + float(i)) * 18.0, W)
+			var py := fposmod(hy * H + bg_t * (22.0 + float(i % 5) * 8.0), H)
+			draw_circle(Vector2(px, py), 1.2 + float(i % 3) * 0.6, Color(1, 1, 1, 0.55))
 	for hz in hazards:
 		var r: Rect2 = hz["r"]
 		if str(hz["k"]) == "lava":
@@ -430,9 +463,9 @@ func _draw() -> void:
 				x2 += 14.0
 	for ri in rects.size():
 		var rr: Rect2 = rects[ri]
-		draw_rect(rr, Color(0.18, 0.19, 0.24))
-		draw_rect(Rect2(rr.position.x, rr.position.y + rr.size.y * 0.5, rr.size.x, rr.size.y * 0.5), Color(0.14, 0.15, 0.19))
-		draw_line(rr.position, Vector2(rr.end.x, rr.position.y), Color(0.38, 0.4, 0.5), 3.0)
+		draw_rect(rr, body)
+		draw_rect(Rect2(rr.position.x, rr.end.y - minf(rr.size.y * 0.25, 18.0), rr.size.x, minf(rr.size.y * 0.25, 18.0)), body.darkened(0.25))
+		_cap(rr, capc)
 	for s in splats:
 		var sp: Vector3 = s
 		draw_set_transform(Vector2(sp.x, sp.y), 0.0, Vector2(1.0, 0.22))
@@ -469,9 +502,15 @@ func _draw_overlay() -> void:
 			overlay.draw_line(p + Vector2(-14, 0), p + Vector2(14, 0), Color(0.3, 0.3, 0.45), 2.0)
 		else:
 			var w: Dictionary = WP[str(it[1])]
-			var rot: float = float(it[4])
-			overlay.draw_circle(p + Vector2(0, -8), 20.0, Color(1, 1, 1, 0.10))
-			WeaponArt.draw(overlay, str(w["kind"]), p + Vector2(-6, -8), -0.15 + rot, float(w["len"]) * 1.1, Color(0.8, 0.8, 0.85))
+			var landed: bool = bool(it[3])
+			var ang: float = bg_t * 2.2 if landed else float(it[4])
+			var cp := p + Vector2(0, -24.0 + (sin(bg_t * 3.0 + p.x) * 4.0 if landed else 0.0))
+			var wl := float(w["len"]) * 1.1 + 20.0
+			overlay.draw_circle(cp, 26.0 + sin(bg_t * 4.0) * 2.0, Color(1, 1, 1, 0.10))
+			if landed:
+				overlay.draw_arc(cp, 29.0, 0.0, TAU, 24, Color(1, 1, 1, 0.28), 2.0, true)
+			var hand := cp - Vector2.from_angle(ang) * wl * 0.5
+			WeaponArt.draw(overlay, str(w["kind"]), hand, ang, float(w["len"]) * 1.1, Color(0.85, 0.85, 0.9))
 	for sn in snake_view:
 		var sp: Vector2 = sn[0]
 		var ph: float = float(sn[2])
@@ -542,12 +581,41 @@ func _process(delta: float) -> void:
 	else:
 		_client_process(dt)
 	_sync_nodes()
-	shake = maxf(0.0, shake - 40.0 * dt)
-	cam.offset = Vector2(randf_range(-shake, shake), randf_range(-shake, shake))
+	_update_camera(dt)
 	overlay.queue_redraw()
 	hudc.queue_redraw()
 	if not movers.is_empty() or not hazards.is_empty():
 		queue_redraw()
+
+
+func _update_camera(dt: float) -> void:
+	var minp := Vector2(1.0e9, 1.0e9)
+	var maxp := Vector2(-1.0e9, -1.0e9)
+	var n := 0
+	for f in fighters.values():
+		var fi: Fighter = f
+		if fi.alive:
+			minp.x = minf(minp.x, fi.pos.x)
+			maxp.x = maxf(maxp.x, fi.pos.x)
+			minp.y = minf(minp.y, fi.pos.y - 100.0)
+			maxp.y = maxf(maxp.y, fi.pos.y)
+			n += 1
+	var tz := 1.0
+	var tc := Vector2(W * 0.5, H * 0.5)
+	if n > 0:
+		var need_x := (maxp.x - minp.x) + 380.0
+		var need_y := (maxp.y - minp.y) + 280.0
+		tz = clampf(minf(W / need_x, H / need_y), 1.0, 1.9)
+		tc = (minp + maxp) * 0.5
+	cam_zoom = lerpf(cam_zoom, tz, 1.0 - exp(-4.0 * dt))
+	cam_pos = cam_pos.lerp(tc, 1.0 - exp(-5.0 * dt))
+	var z := maxf(cam_zoom, 1.0)
+	var hw := W * 0.5 / z
+	var hh := H * 0.5 / z
+	cam.zoom = Vector2(z, z)
+	cam.position = Vector2(clampf(cam_pos.x, hw, W - hw), clampf(cam_pos.y, hh, H - hh))
+	shake = maxf(0.0, shake - 40.0 * dt)
+	cam.offset = Vector2(randf_range(-shake, shake), randf_range(-shake, shake))
 
 
 func _sync_nodes() -> void:
@@ -870,6 +938,8 @@ func _hurt(t: Fighter, dmg: float, dir: int, kb: float, src: Fighter = null, blo
 	t.hit_pending = false
 	t.burst_left = 0
 	t.node.hurt()
+	if kb >= 400.0:
+		t.node.spin_v = -float(dir) * 9.5
 	var hp := t.pos + Vector2(0, -60)
 	_fx_hurt(hp, dir, t.idx, t.id == my_id)
 	if net:
@@ -934,6 +1004,7 @@ func _fx_explode(pos: Vector2, radius: float) -> void:
 	fx.sparks(pos, -1, 10, 1.4)
 	Game.sfx("boom", 0.8)
 	shake = maxf(shake, 9.0)
+	cam_zoom = minf(cam_zoom + 0.15, 2.2)
 
 
 func _kill(f: Fighter, dir: int) -> void:
@@ -963,6 +1034,7 @@ func _fx_death(pos: Vector2, idx: int) -> void:
 	fx.ring(pos + Vector2(0, -50), 100.0)
 	Game.sfx("die")
 	shake = maxf(shake, 7.0)
+	cam_zoom = minf(cam_zoom + 0.12, 2.2)
 	var fy := _floor_y(pos.x, pos.y)
 	if fy > 0.0:
 		for i in 3:
@@ -1507,6 +1579,8 @@ func _ev_hurt(id: int, dir: int, pos: Vector2) -> void:
 	if f == null:
 		return
 	f.node.hurt()
+	if f.vel.length() > 500.0:
+		f.node.spin_v = -float(dir) * 9.5
 	_fx_hurt(pos, dir, f.idx, id == my_id)
 
 

@@ -20,6 +20,8 @@ var players := {}   # peer_id -> {"name","weapon","hp","dmg","spd"}
 var rooms := {}     # ip -> {"name","count","t"}
 var mode := "coop"   # "coop" or "arena"
 var param := 1      # co-op level or arena start map
+var max_players := 4
+var fill_bots := true
 
 var _peer: ENetMultiplayerPeer
 var _tx: PacketPeerUDP
@@ -66,6 +68,8 @@ func host_room() -> bool:
 	players = {1: my_info()}
 	mode = "coop"
 	param = 1
+	max_players = 4
+	fill_bots = true
 	_tx = PacketPeerUDP.new()
 	_tx.set_broadcast_enabled(true)
 	players_changed.emit()
@@ -179,13 +183,17 @@ func _on_server_lost() -> void:
 func _sv_hello(info: Dictionary) -> void:
 	if not is_host:
 		return
-	players[multiplayer.get_remote_sender_id()] = info
+	var sid := multiplayer.get_remote_sender_id()
+	if players.size() >= max_players:
+		_peer.disconnect_peer(sid)
+		return
+	players[sid] = info
 	_sync_players()
 
 
 func _sync_players() -> void:
 	rpc("_cl_players", players)
-	rpc("_cl_cfg", mode, param)
+	rpc("_cl_cfg", mode, param, max_players, fill_bots)
 	players_changed.emit()
 
 
@@ -195,19 +203,25 @@ func _cl_players(p: Dictionary) -> void:
 	players_changed.emit()
 
 
-func set_cfg(m: String, p: int) -> void:
+func set_cfg(m: String, p: int, mp := -1, fb := -1) -> void:
 	if not is_host:
 		return
 	mode = m
 	param = p
-	rpc("_cl_cfg", mode, param)
+	if mp > 0:
+		max_players = clampi(maxi(mp, players.size()), 2, 4)
+	if fb >= 0:
+		fill_bots = fb == 1
+	rpc("_cl_cfg", mode, param, max_players, fill_bots)
 	players_changed.emit()
 
 
 @rpc("authority", "reliable")
-func _cl_cfg(m: String, p: int) -> void:
+func _cl_cfg(m: String, p: int, mp: int, fb: bool) -> void:
 	mode = m
 	param = p
+	max_players = mp
+	fill_bots = fb
 	players_changed.emit()
 
 
@@ -216,6 +230,11 @@ func start_match() -> void:
 		return
 	stop_discovery()
 	_tx = null
+	if mode == "arena" and fill_bots:
+		var bi := 1
+		while players.size() < max_players:
+			players[100 + bi] = {"name": "Bot %d" % bi, "weapon": "fists", "hp": 100.0, "dmg": 1.0, "spd": 1.0, "bot": true}
+			bi += 1
 	rpc("_cl_start", mode, param, players)
 	battle_start.emit(mode, param)
 
