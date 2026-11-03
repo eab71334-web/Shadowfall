@@ -64,6 +64,9 @@ var thin := false
 var gun_mode := false
 var recoil := 0.0
 var block_mode := false
+var crouch_mode := false
+var aim_angle := 0.0
+var aim_on := false
 var spin := 0.0
 var spin_v := 0.0
 var _ps := {}
@@ -370,6 +373,13 @@ func _draw() -> void:
 		if hurt_t > 0.0:
 			var hurt_pose := _pose(-4, 6, -0.36, Vector2(-8, -18), Vector2(-14, -8), Vector2(10, 0), Vector2(-14, 0), -2.0)
 			pose_ = _mix(pose_, hurt_pose, clampf(hurt_t / 0.26, 0.0, 1.0))
+		if crouch_mode and atk_t < 0.0 and on_ground:
+			pose_ = pose_.duplicate()
+			pose_["hy"] = 24.0
+			pose_["hx"] = 4.0
+			pose_["ta"] = 0.38
+			pose_["ff"] = Vector2(20, 0)
+			pose_["fb"] = Vector2(-14, 0)
 		if pop_y < -3.0:
 			rot = -float(facing) * minf(0.5, -pop_y / 90.0)
 
@@ -394,13 +404,26 @@ func _draw() -> void:
 			pose_["fb"] = (pose_["fb"] as Vector2) + Vector2(sin(ph2 * 0.7 + 1.5) * 5.0, cos(ph2 + 1.0) * 3.0)
 	else:
 		_ps = {}
-	if gun_mode and not dead and atk_t < 0.0:
+	var la := aim_angle if facing == 1 else PI - aim_angle
+	if (gun_mode or aim_on) and not dead and atk_t < 0.0:
 		var aim := pose_.duplicate()
-		aim["hf"] = Vector2(25.0 - recoil * 9.0, -1.0)
-		aim["hb"] = Vector2(14.0 - recoil * 5.0, 3.0)
-		aim["wa"] = -recoil * 0.12
+		var dv := Vector2.from_angle(la)
+		var reach := 22.0
+		var back := 6.0
+		if gun_mode:
+			reach = 25.0 - recoil * 9.0
+			back = 14.0 - recoil * 5.0
+		aim["hf"] = dv * reach
+		aim["hb"] = dv * back + Vector2(0, 3.0)
+		aim["wa"] = la
 		aim["ta"] = clampf(float(pose_["ta"]), -0.2, 0.2) * 0.6 + 0.05
 		pose_ = aim
+	elif aim_on and atk_t >= 0.0 and not gun_mode and not dead and atk_type == "thrust":
+		var th := pose_.duplicate()
+		var hfv: Vector2 = th["hf"]
+		th["hf"] = Vector2.from_angle(la) * hfv.length()
+		th["wa"] = la
+		pose_ = th
 	if block_mode and not dead and atk_t < 0.0:
 		var blk := pose_.duplicate()
 		blk["hf"] = Vector2(17.0, -15.0)

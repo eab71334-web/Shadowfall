@@ -100,12 +100,17 @@ class Fighter:
 	var block_age := 0.0
 	var block_en := 1.5
 	var burn_t := 0.0
+	var damaged := false
 	var burn_acc := 0.0
 	var burst_left := 0
 	var burst_t := 0.0
 	var stand_idx := -1
 	var kicking := false
 	var block_hold := 0.0
+	var aim := 0.0
+	var aim_on := false
+	var crouch := false
+	var in_crouch := false
 
 
 var map_start := 0
@@ -301,6 +306,7 @@ func _start_round() -> void:
 		f.ammo = 0
 		f.stun = 0.0
 		f.burn_t = 0.0
+		f.damaged = false
 		f.block_en = 1.5
 		f.blocking = false
 		f.burst_left = 0
@@ -336,6 +342,7 @@ func _build_hud() -> void:
 	hud_root.add_child(hudc)
 	controls = TouchControls.new()
 	controls.grab_mode = true
+	controls.stick_mode = true
 	hud_root.add_child(controls)
 	banner = UIKit.label("", 64)
 	banner.position = Vector2(0, H * 0.2)
@@ -378,8 +385,8 @@ func _draw_hud() -> void:
 			if bool(w["gun"]) or int(w["ammo"]) > 0:
 				tx = "%s  %s" % [tx, "∞" if w.has("inf") else str(me.ammo)]
 			hudc.draw_string(f, Vector2(0, H - 24), tx, HORIZONTAL_ALIGNMENT_CENTER, W, 24, Color(1, 1, 1, 0.9))
-		hudc.draw_rect(Rect2(W - 380 - 30, H - 215 + 54, 60, 6), Color(0, 0, 0, 0.5))
-		hudc.draw_rect(Rect2(W - 380 - 30, H - 215 + 54, 60.0 * clampf(me.block_en / 1.5, 0.0, 1.0), 6), Color(1, 1, 1, 0.85))
+		hudc.draw_rect(Rect2(W - 330 - 30, H - 90 + 50, 60, 6), Color(0, 0, 0, 0.5))
+		hudc.draw_rect(Rect2(W - 330 - 30, H - 90 + 50, 60.0 * clampf(me.block_en / 1.5, 0.0, 1.0), 6), Color(1, 1, 1, 0.85))
 
 
 func _set_banner_alpha(v: float) -> void:
@@ -423,18 +430,32 @@ func _cap(r: Rect2, c: Color) -> void:
 
 
 func _draw() -> void:
-	var snow := map_idx % 2 == 1
+	var style := map_idx % 3
+	var snow := style == 1
+	var gold := style == 2
 	var top := Color(0.16, 0.15, 0.12)
 	var bot := Color(0.25, 0.23, 0.18)
 	var body := Color(0.09, 0.09, 0.11)
 	var capc := Color(0.78, 0.06, 0.22)
-	if snow:
+	if gold:
+		top = Color(0.04, 0.08, 0.5)
+		bot = Color(0.07, 0.14, 0.6)
+		body = Color(0.05, 0.06, 0.2)
+		capc = Color(0.96, 0.76, 0.25)
+	elif snow:
 		top = Color(0.03, 0.1, 0.16)
 		bot = Color(0.05, 0.2, 0.26)
 		body = Color(0.1, 0.4, 0.42)
 		capc = Color(0.96, 0.98, 1.0)
 	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(W, 0), Vector2(W, H), Vector2(0, H)]), PackedColorArray([top, top, bot, bot]))
-	if not snow:
+	if gold:
+		for i in 7:
+			draw_circle(Vector2(W * 0.5, H * 0.45), 330.0 - float(i) * 40.0, Color(1.0, 0.65, 0.3, 0.05))
+		for i in 5:
+			var lx := W * (0.12 + 0.19 * float(i))
+			draw_circle(Vector2(lx, H * 0.86), 5.0, Color(0.85, 0.95, 1.0, 0.9))
+			draw_circle(Vector2(lx, H * 0.86), 16.0, Color(0.7, 0.9, 1.0, 0.18))
+	elif not snow:
 		for i in 7:
 			var s: Vector2 = bg_seed[i]
 			draw_circle(Vector2(s.x * W, s.y * H * 0.75), 90.0 + s.y * 90.0, Color(1, 1, 1, 0.035))
@@ -489,6 +510,13 @@ func _ray_end(from: Vector2, dir: float) -> Vector2:
 
 
 func _draw_overlay() -> void:
+	var me0: Fighter = fighters.get(my_id)
+	if me0 != null and me0.alive and me0.aim_on and not me0.bot:
+		var ad := Vector2.from_angle(me0.aim)
+		var o := me0.pos + Vector2(0, -64.0) + ad * 40.0
+		for i in 8:
+			overlay.draw_circle(o + ad * float(i) * 22.0, 2.0, Color(1, 1, 1, 0.45 - float(i) * 0.04))
+		overlay.draw_arc(o + ad * 190.0, 9.0, 0.0, TAU, 14, Color(1, 1, 1, 0.55), 2.0, true)
 	for f in fighters.values():
 		var fi: Fighter = f
 		if fi.alive and fi.wid == "sniper":
@@ -605,7 +633,7 @@ func _update_camera(dt: float) -> void:
 	if n > 0:
 		var need_x := (maxp.x - minp.x) + 380.0
 		var need_y := (maxp.y - minp.y) + 280.0
-		tz = clampf(minf(W / need_x, H / need_y), 1.0, 1.9)
+		tz = clampf(minf(W / need_x, H / need_y), 1.0, 1.45)
 		tc = (minp + maxp) * 0.5
 	cam_zoom = lerpf(cam_zoom, tz, 1.0 - exp(-4.0 * dt))
 	cam_pos = cam_pos.lerp(tc, 1.0 - exp(-5.0 * dt))
@@ -630,6 +658,9 @@ func _sync_nodes() -> void:
 		fi.node.show_bar = 99.0 if fi.alive else 0.0
 		fi.node.visible = fi.alive
 		fi.node.block_mode = fi.blocking
+		fi.node.crouch_mode = fi.crouch
+		fi.node.aim_angle = _aim_angle(fi)
+		fi.node.aim_on = fi.aim_on and fi.alive
 
 
 func _refresh_views() -> void:
@@ -649,11 +680,26 @@ func _now() -> int:
 	return Time.get_ticks_msec()
 
 
+func _bh(f: Fighter) -> float:
+	return BODY_H * 0.62 if f.crouch else BODY_H
+
+
+func _aim_angle(f: Fighter) -> float:
+	if f.aim_on:
+		return f.aim
+	return 0.0 if f.face > 0 else PI
+
+
 func _read_local(f: Fighter) -> void:
 	f.in_axis = controls.axis()
 	f.in_attack = controls.is_held("attack")
 	f.in_jump_held = controls.is_held("jump")
 	f.in_block = controls.is_held("block")
+	f.in_crouch = controls.crouch()
+	var av := controls.aim_vec()
+	f.aim_on = av != Vector2.ZERO
+	if f.aim_on:
+		f.aim = av.angle()
 	if controls.consume("jump"):
 		f.jump_t = _now()
 	if controls.consume("dash"):
@@ -661,7 +707,7 @@ func _read_local(f: Fighter) -> void:
 
 
 @rpc("any_peer", "unreliable")
-func _sv_input(axis: float, atk: bool, jh: bool, blk: bool) -> void:
+func _sv_input(axis: float, atk: bool, jh: bool, blk: bool, aim: float, aim_on: bool, crouch: bool) -> void:
 	if not is_server:
 		return
 	var f: Fighter = fighters.get(multiplayer.get_remote_sender_id())
@@ -670,6 +716,9 @@ func _sv_input(axis: float, atk: bool, jh: bool, blk: bool) -> void:
 		f.in_attack = atk
 		f.in_jump_held = jh
 		f.in_block = blk
+		f.aim = aim
+		f.aim_on = aim_on
+		f.in_crouch = crouch
 
 
 @rpc("any_peer", "reliable")
@@ -717,14 +766,17 @@ func _step_fighter(f: Fighter, dt: float) -> void:
 			_damage_raw(f, 2.5)
 			if not f.alive:
 				return
+	f.crouch = f.in_crouch and f.on_ground and f.stun <= 0.0 and not f.bot
 	var axis := f.in_axis if (f.stun <= 0.0 and not f.blocking) else 0.0
-	var target := axis * RUN * (0.55 if f.blocking else 1.0)
+	var target := axis * RUN * (0.55 if f.blocking else 1.0) * (0.45 if f.crouch else 1.0)
 	var acc := 3200.0 if f.on_ground else 1900.0
 	if axis == 0.0:
 		acc = 2600.0 if f.on_ground else 500.0
 	f.vel.x = move_toward(f.vel.x, target, acc * dt)
 	if f.stun <= 0.0:
-		if axis != 0.0:
+		if f.aim_on and absf(cos(f.aim)) > 0.15:
+			f.face = 1 if cos(f.aim) > 0.0 else -1
+		elif axis != 0.0:
 			f.face = 1 if axis > 0.0 else -1
 		elif f.bot:
 			f.face = f.want_face
@@ -739,6 +791,8 @@ func _step_fighter(f: Fighter, dt: float) -> void:
 		f.stand_idx = -1
 		fx.dust(f.pos, 4)
 		Game.sfx("swing", 1.5)
+		if absf(f.in_axis) > 0.5 and not (f.node.gun_mode and f.aim_on):
+			f.node.spin_v = signf(f.in_axis) * 8.7
 	if f.vel.y < -250.0 and not f.in_jump_held and not f.jump_cut:
 		f.vel.y *= 0.5
 		f.jump_cut = true
@@ -792,11 +846,12 @@ func _step_fighter(f: Fighter, dt: float) -> void:
 
 func _move(f: Fighter, dt: float) -> void:
 	var was_air := not f.on_ground
+	var bh := _bh(f)
 	f.pos.x += f.vel.x * dt
 	f.pos.x = clampf(f.pos.x, HALF_W, W - HALF_W)
 	for r in rects:
 		var rr: Rect2 = r
-		if Rect2(f.pos.x - HALF_W, f.pos.y - BODY_H, HALF_W * 2.0, BODY_H).intersects(rr):
+		if Rect2(f.pos.x - HALF_W, f.pos.y - bh, HALF_W * 2.0, bh).intersects(rr):
 			if f.vel.x > 0.0:
 				f.pos.x = rr.position.x - HALF_W
 			else:
@@ -807,7 +862,7 @@ func _move(f: Fighter, dt: float) -> void:
 	f.pos.y += f.vel.y * dt
 	for ri in rects.size():
 		var rr: Rect2 = rects[ri]
-		if Rect2(f.pos.x - HALF_W, f.pos.y - BODY_H, HALF_W * 2.0, BODY_H).intersects(rr):
+		if Rect2(f.pos.x - HALF_W, f.pos.y - bh, HALF_W * 2.0, bh).intersects(rr):
 			if f.vel.y > 0.0:
 				f.pos.y = rr.position.y
 				f.on_ground = true
@@ -816,7 +871,7 @@ func _move(f: Fighter, dt: float) -> void:
 					f.node.land_t = 0.12
 					fx.dust(f.pos, 5)
 			else:
-				f.pos.y = rr.end.y + BODY_H
+				f.pos.y = rr.end.y + bh
 			f.vel.y = 0.0
 
 
@@ -860,13 +915,16 @@ func _melee_hit(f: Fighter) -> void:
 		kb = 520.0
 		rng = 70.0
 		f.kicking = false
+	var dirv := Vector2.from_angle(_aim_angle(f))
+	var origin := f.pos + Vector2(0, -50)
 	for o in fighters.values():
 		var t: Fighter = o
 		if t == f or not t.alive:
 			continue
-		var dx := (t.pos.x - f.pos.x) * float(f.face)
-		if dx > -12.0 and dx < rng and absf(t.pos.y - f.pos.y) < 75.0:
-			_hurt(t, dmg, f.face, kb, f)
+		var to := (t.pos + Vector2(0, -45)) - origin
+		var dist := to.length()
+		if dist < rng + 20.0 and (dist < 32.0 or absf(to.angle_to(dirv)) < 1.0):
+			_hurt(t, dmg, 1 if to.x >= 0.0 else -1, kb, f)
 
 
 func _try_fire(f: Fighter, w: Dictionary) -> void:
@@ -882,20 +940,24 @@ func _try_fire(f: Fighter, w: Dictionary) -> void:
 func _fire_one(f: Fighter, w: Dictionary) -> void:
 	if not w.has("inf"):
 		f.ammo -= 1
-	var muzzle := f.pos + Vector2(float(f.face) * (32.0 + float(w["len"])), -64.0)
+	var adir := Vector2.from_angle(_aim_angle(f))
+	var muzzle := f.pos + Vector2(0, -40.0 if f.crouch else -64.0) + adir * (32.0 + float(w["len"]))
 	if w.has("snake"):
 		snakes.append({"p": Vector2(f.pos.x + float(f.face) * 30.0, f.pos.y - 6.0), "v": Vector2(float(f.face) * 160.0, -120.0), "dir": f.face, "life": 7.0, "o": f.id, "c": f.idx, "bite": 0.0, "ph": 0.0})
 	else:
 		for i in int(w["pellets"]):
-			var a := (0.0 if f.face > 0 else PI) + randf_range(-1.0, 1.0) * float(w["spread"])
+			var a := _aim_angle(f) + randf_range(-1.0, 1.0) * float(w["spread"])
 			var d := float(w["dmg"])
 			if int(w["pellets"]) >= 5 and f.wid == "sawedoff":
 				d = randf_range(10.0, 30.0)
 			projectiles.append({"p": muzzle, "v": Vector2.from_angle(a) * float(w["speed"]), "o": f.id, "dmg": d, "kb": float(w["kb"]), "g": float(w["grav"]), "k": str(w["kind"]), "c": f.idx, "age": 0.0,
 				"bounce": int(w.get("bounce", 0)), "expl": float(w.get("expl", 0.0)), "fuse": float(w.get("fuse", 0.0)), "life": float(w.get("life", 3.0)), "flame": w.has("flame")})
 	var rk := float(w["rk"])
-	f.vel.x -= float(f.face) * rk
-	if rk >= 300.0:
+	f.vel.x -= adir.x * rk
+	if adir.y > 0.3 and rk >= 150.0:
+		f.vel.y = minf(f.vel.y, -rk * 0.9 * adir.y)
+		f.on_ground = false
+	elif rk >= 300.0:
 		f.vel.y = minf(f.vel.y, -rk * 0.45)
 		f.on_ground = false
 	f.node.recoil = 1.0
@@ -915,6 +977,7 @@ func _fire_one(f: Fighter, w: Dictionary) -> void:
 
 func _damage_raw(t: Fighter, dmg: float) -> void:
 	t.hp -= dmg
+	t.damaged = true
 	if t.hp <= 0.0:
 		_kill(t, t.face)
 
@@ -931,6 +994,7 @@ func _hurt(t: Fighter, dmg: float, dir: int, kb: float, src: Fighter = null, blo
 		kb *= 0.4
 		fx.ring(t.pos + Vector2(float(t.face) * 24.0, -60.0), 40.0)
 	t.hp -= dmg
+	t.damaged = true
 	t.vel.x += float(dir) * kb
 	t.vel.y = minf(t.vel.y, -kb * 0.35)
 	t.on_ground = false
@@ -1082,7 +1146,8 @@ func _drop_item(p: Vector2, v: Vector2, wid: String, ammo: int, owner: int, tt: 
 func _throw_weapon(f: Fighter, tt: float) -> void:
 	if f.wid == "fists":
 		return
-	_drop_item(f.pos + Vector2(float(f.face) * 20.0, -64.0), Vector2(float(f.face) * 700.0 + f.vel.x * 0.5, -230.0), f.wid, f.ammo, f.id, tt)
+	var dv := Vector2.from_angle(f.aim) if f.aim_on else Vector2(float(f.face), -0.3).normalized()
+	_drop_item(f.pos + Vector2(0, -64.0) + dv * 24.0, dv * 720.0 + f.vel * 0.4, f.wid, f.ammo, f.id, tt)
 	f.wid = "fists"
 	f.ammo = 0
 	f.empty_t = 0.0
@@ -1143,7 +1208,7 @@ func _update_items(dt: float) -> void:
 			it["tt"] = float(it["tt"]) - dt
 			for o in fighters.values():
 				var t: Fighter = o
-				if t.alive and t.id != int(it["owner"]) and Rect2(t.pos.x - 18, t.pos.y - 100, 36, 100).has_point(np):
+				if t.alive and t.id != int(it["owner"]) and Rect2(t.pos.x - 18, t.pos.y - _bh(t) - 8.0, 36, _bh(t) + 8.0).has_point(np):
 					var d := 1 if v.x > 0.0 else -1
 					_hurt(t, THROW_DMG, d, 480.0, fighters.get(int(it["owner"])))
 					it["tt"] = 0.0
@@ -1195,7 +1260,7 @@ func _update_projectiles(dt: float) -> void:
 				var t: Fighter = o
 				if not t.alive or t.id == int(b["o"]):
 					continue
-				if Rect2(t.pos.x - 17, t.pos.y - 100, 34, 100).has_point(p):
+				if Rect2(t.pos.x - 17, t.pos.y - _bh(t) - 8.0, 34, _bh(t) + 8.0).has_point(p):
 					var dirx := 1 if v.x > 0.0 else -1
 					if t.blocking and dirx == -t.face and t.block_age < 0.22 and float(b["expl"]) <= 0.0:
 						v = -v
@@ -1205,9 +1270,9 @@ func _update_projectiles(dt: float) -> void:
 						continue
 					var rel := p.y - t.pos.y
 					var mult := 1.0
-					if rel < -82.0:
+					if rel < -(_bh(t) - 10.0):
 						mult = 2.0
-					elif rel < -70.0:
+					elif rel < -(_bh(t) - 22.0):
 						mult = 1.5
 					if float(b["expl"]) > 0.0:
 						dead_ = true
@@ -1299,7 +1364,7 @@ func _check_round_end() -> void:
 	if al.size() == 1:
 		var w: Fighter = al[0]
 		w.wins += 1
-		_banner_all("%s %s" % [w.pname, Game.t("wins_round")], "", 2.0)
+		_banner_all("%s %s" % [w.pname, Game.t("wins_round")], Game.t("flawless") if not w.damaged else "", 2.0)
 		if net:
 			rpc("_ev_wins", _wins_dict())
 	else:
@@ -1405,6 +1470,10 @@ func _bot_think(f: Fighter, dt: float) -> void:
 	elif is_gun and not has_item and absf(dx) < ideal - 90.0:
 		f.in_axis = -signf(dx)
 	f.want_face = 1 if tgt.pos.x > f.pos.x else -1
+	f.aim_on = false
+	if is_gun and not has_item:
+		f.aim_on = true
+		f.aim = ((tgt.pos + Vector2(0, -50)) - (f.pos + Vector2(0, -64))).angle() + randf_range(-0.06, 0.06)
 	if has_item:
 		f.want_face = 1 if dx >= 0.0 else -1
 	var dy := goal.y - f.pos.y
@@ -1440,7 +1509,7 @@ func _send_snapshot() -> void:
 	for id in order:
 		var f: Fighter = fighters[id]
 		fl.append([f.id, f.pos.x, f.pos.y, f.vel.x, f.vel.y, f.face, f.hp, f.wid, f.ammo, f.alive,
-			f.node.atk_type if f.node.is_attacking() else "", f.node.atk_t, f.node.atk_dur, f.on_ground, f.blocking])
+			f.node.atk_type if f.node.is_attacking() else "", f.node.atk_t, f.node.atk_dur, f.on_ground, f.blocking, f.aim, f.aim_on, f.crouch])
 	var bl: Array = []
 	for b in projectiles:
 		var p: Vector2 = b["p"]
@@ -1486,8 +1555,14 @@ func _cl_snap(snap: Dictionary) -> void:
 			f.node.atk_t = att
 		else:
 			f.node.atk_t = -1.0
+		var was_ground := f.on_ground
 		f.on_ground = bool(d[13])
 		f.blocking = bool(d[14])
+		f.aim = float(d[15])
+		f.aim_on = bool(d[16])
+		f.crouch = bool(d[17])
+		if was_ground and not f.on_ground and f.vel.y < -300.0 and absf(f.vel.x) > 150.0 and not f.node.gun_mode:
+			f.node.spin_v = signf(f.vel.x) * 8.7
 	proj_view = []
 	for b in snap["b"]:
 		proj_view.append([Vector2(float(b[0]), float(b[1])), Vector2(float(b[2]), float(b[3])), str(b[4]), int(b[5])])
@@ -1508,7 +1583,7 @@ func _client_process(dt: float) -> void:
 	in_t -= dt
 	if in_t <= 0.0:
 		in_t = 0.033
-		rpc_id(1, "_sv_input", me.in_axis, me.in_attack, me.in_jump_held, me.in_block)
+		rpc_id(1, "_sv_input", me.in_axis, me.in_attack, me.in_jump_held, me.in_block, me.aim, me.aim_on, me.in_crouch)
 	if me.jump_t != me.jump_sent:
 		me.jump_sent = me.jump_t
 		rpc_id(1, "_sv_press", "jump")
