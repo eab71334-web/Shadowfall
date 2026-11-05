@@ -27,3 +27,6 @@ and physics-based maps (stacked crates and planks that collapse when shot) - the
 
 ## Arena controls (twin stick)
 Left floating stick: walk, push up = jump (spins when moving), push down = crouch. Right floating stick: aim 360 deg (hand/weapon follows), push to the edge = fire/hit. Buttons: block (parry window 0.22s) and throw weapon (thrown along the aim, spinning, 55 dmg).
+
+## Body states (arena stick figures, from the reference clips)
+stiff upright (idle / walk: legs alternate, arms hang) -> stiff rod while rising in a jump -> limp (limbs trail opposite to the motion) while falling or hurt -> heap/crouch after a hard landing -> stands back up. Aiming uses one arm only, the other arm stays loose. See `limp`, `heap_t`, `_limp_pose()` in stickman.gd.
