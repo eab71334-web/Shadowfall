@@ -67,6 +67,11 @@ var block_mode := false
 var crouch_mode := false
 var aim_angle := 0.0
 var aim_on := false
+var limp := 0.0
+var air_t := 0.0
+var heap_t := 0.0
+var fall_v := 0.0
+var prev_ground := true
 var spin := 0.0
 var spin_v := 0.0
 var _ps := {}
@@ -178,6 +183,24 @@ func _process(delta: float) -> void:
 		spin = lerp_angle(spin, nearest, minf(1.0, 14.0 * delta))
 		if absf(spin - nearest) < 0.02:
 			spin = 0.0
+	if thin and not dead:
+		if on_ground:
+			if not prev_ground:
+				if fall_v > 550.0:
+					heap_t = 0.32 + clampf((fall_v - 550.0) / 1800.0, 0.0, 0.45)
+				fall_v = 0.0
+			air_t = 0.0
+			var lt := 1.0 if (hurt_t > 0.0 or heap_t > 0.0) else 0.0
+			limp = lerpf(limp, lt, 1.0 - exp(-(16.0 if lt > limp else 5.0) * delta))
+		else:
+			air_t += delta
+			fall_v = maxf(fall_v, vy)
+			var lt2 := 1.0
+			if vy < -180.0 and air_t < 0.4:
+				lt2 = 0.12
+			limp = lerpf(limp, lt2, 1.0 - exp(-12.0 * delta))
+		heap_t = maxf(0.0, heap_t - delta)
+		prev_ground = on_ground
 	if dead:
 		dead_t += delta
 	else:
@@ -235,6 +258,8 @@ func _ease(kind_: String, k: float) -> float:
 
 func _idle_pose() -> Dictionary:
 	var br := sin(t * 2.4)
+	if thin:
+		return _pose(0.0, 0.0, 0.0, Vector2(3, 16.0 + br * 0.6), Vector2(-3, 16.0 - br * 0.6), Vector2(3, 0), Vector2(-3, 0), 1.0)
 	return _pose(0.0, 4.0 + br * 1.2, 0.10 + br * 0.015, Vector2(15, 12.0 + br * 1.5), Vector2(5, 15), Vector2(13, 0), Vector2(-11, 0), 1.0 + br * 0.04)
 
 
@@ -247,18 +272,32 @@ func _run_pose() -> Dictionary:
 	var fo := Vector2(S * cos(p + PI), -H * maxf(0.0, -sin(p + PI)))
 	var bob := -absf(sin(p)) * lerpf(1.0, 4.0, k)
 	var sw := cos(p)
+	if thin:
+		var hf2 := Vector2(3.0 - 7.0 * sw * k, 15.0 - 2.0 * absf(sin(p)))
+		var hb2 := Vector2(-3.0 + 7.0 * sw * k, 15.0 - 2.0 * absf(sin(p)))
+		return _pose(1.5 * k, lerpf(1.0, 5.0, k) + bob * 0.6, 0.03 + 0.15 * k, hf2, hb2, fa, fo, 1.0)
 	var hf := Vector2(8.0 - 12.0 * sw * k, 12.0 - 8.0 * absf(sin(p)) * k)
 	var hb := Vector2(2.0 + 12.0 * sw * k, 11.0 - 7.0 * absf(sin(p)) * k)
 	return _pose(2.0 * k, lerpf(4.0, 8.0, k) + bob, 0.10 + 0.32 * k, hf, hb, fa, fo, lerpf(1.1, 1.9, k))
 
 
 func _air_pose() -> Dictionary:
+	if thin:
+		return _pose(0.0, 0.0, 0.0, Vector2(3, 15), Vector2(-3, 15), Vector2(2, -6), Vector2(-2, -3), 1.0)
 	var kk := clampf((vy + 500.0) / 1000.0, 0.0, 1.0)
 	if on_ground:
 		kk = clampf((pop_vy + 300.0) / 600.0, 0.0, 1.0)
 	var rise := _pose(0.0, 0.0, 0.12, Vector2(10, -8), Vector2(-4, -14), Vector2(12, -20), Vector2(-8, -8), -0.6)
 	var fall := _pose(0.0, 0.0, 0.05, Vector2(14, -2), Vector2(-10, -6), Vector2(8, -6), Vector2(-4, -4), 0.4)
 	return _mix(rise, fall, kk)
+
+
+func _limp_pose() -> Dictionary:
+	# loose body: limbs trail opposite to the motion (arms/legs fly up while falling, back while moving)
+	var d := Vector2(clampf(-vx * float(facing) * 0.035, -24.0, 24.0), clampf(-vy * 0.03, -28.0, 28.0))
+	var sw := sin(t * 9.0 + seed_) * 4.0
+	var ta_ := clampf(vx * float(facing) * 0.0006, -0.4, 0.4)
+	return _pose(0.0, 2.0, ta_, Vector2(2.0, 12.0) + d * 0.95 + Vector2(sw, 0), Vector2(-2.0, 12.0) + d * 0.95 - Vector2(sw, 0), Vector2(4.0 + d.x * 0.6, -9.0 + d.y * 0.5), Vector2(-4.0 + d.x * 0.6, -6.0 + d.y * 0.5), 1.2)
 
 
 func _base_pose() -> Dictionary:
@@ -380,6 +419,13 @@ func _draw() -> void:
 			pose_["ta"] = 0.38
 			pose_["ff"] = Vector2(20, 0)
 			pose_["fb"] = Vector2(-14, 0)
+		if thin:
+			if heap_t > 0.0 and on_ground:
+				var hk := clampf(heap_t / 0.4, 0.0, 1.0)
+				hk = hk * hk * (3.0 - 2.0 * hk)
+				pose_ = _mix(pose_, _pose(5.0, 26.0, 0.65, Vector2(8, 24), Vector2(-2, 22), Vector2(22, 0), Vector2(-8, 0), 1.0), hk)
+			if limp > 0.02:
+				pose_ = _mix(pose_, _limp_pose(), limp)
 		if pop_y < -3.0:
 			rot = -float(facing) * minf(0.5, -pop_y / 90.0)
 
@@ -394,14 +440,6 @@ func _draw() -> void:
 		else:
 			_ps = _mix(_ps, pose_, 1.0 - exp(-rate * _dt))
 		pose_ = _ps
-		if thin and ((not on_ground) or hurt_t > 0.0):
-			var ph2 := t * 13.0 + seed_
-			pose_ = pose_.duplicate()
-			if not gun_mode:
-				pose_["hf"] = (pose_["hf"] as Vector2) + Vector2(sin(ph2) * 7.0, cos(ph2 * 0.9) * 7.0)
-				pose_["hb"] = (pose_["hb"] as Vector2) + Vector2(sin(ph2 + 2.0) * 7.0, cos(ph2 * 1.1 + 1.0) * 7.0)
-			pose_["ff"] = (pose_["ff"] as Vector2) + Vector2(sin(ph2 * 0.8) * 5.0, cos(ph2) * 3.0)
-			pose_["fb"] = (pose_["fb"] as Vector2) + Vector2(sin(ph2 * 0.7 + 1.5) * 5.0, cos(ph2 + 1.0) * 3.0)
 	else:
 		_ps = {}
 	var la := aim_angle if facing == 1 else PI - aim_angle
@@ -414,7 +452,8 @@ func _draw() -> void:
 			reach = 25.0 - recoil * 9.0
 			back = 14.0 - recoil * 5.0
 		aim["hf"] = dv * reach
-		aim["hb"] = dv * back + Vector2(0, 3.0)
+		if not thin:
+			aim["hb"] = dv * back + Vector2(0, 3.0)
 		aim["wa"] = la
 		aim["ta"] = clampf(float(pose_["ta"]), -0.2, 0.2) * 0.6 + 0.05
 		pose_ = aim

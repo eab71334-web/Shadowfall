@@ -867,6 +867,8 @@ func _move(f: Fighter, dt: float) -> void:
 				f.pos.y = rr.position.y
 				f.on_ground = true
 				f.stand_idx = ri
+				if was_air and f.vel.y > 900.0:
+					f.stun = maxf(f.stun, 0.22)
 				if was_air and f.vel.y > 400.0:
 					f.node.land_t = 0.12
 					fx.dust(f.pos, 5)
